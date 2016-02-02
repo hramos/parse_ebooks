@@ -1,0 +1,975 @@
+Windows Guide
+
+If you haven't installed the SDK yet, please head over to the QuickStart guide to get our SDK up and running in Visual Studio. Note that our SDK targets WinRT for developing Windows Store apps or Windows Phone 8 apps and requires Visual Studio 2012.
+
+Introduction
+
+The Parse platform provides a complete backend solution for your mobile application. Our goal is to totally eliminate the need for writing server code or maintaining servers.
+
+If you're familiar with web frameworks like ASP.NET MVC we've taken many of the same principles and applied them to our platform. In particular, our SDK is ready to use out of the box with minimal configuration on your part.
+
+This guide is for the .NET-based version of our SDK. If you are doing Windows 8 development using HTML and JavaScript, please see our JavaScript guide.
+Parse's Windows SDK makes heavy use of the Task-based Asynchronous Pattern so that your apps remain responsive. You can use the async and await keywords in C# and Visual Basic to easily use these long-running tasks.
+
+Apps
+
+On Parse, you create an App for each of your mobile applications. Each App has its own application id and client key that you apply to your SDK install. Your account on Parse can accommodate multiple Apps. This is useful even if you have one application, since you can deploy different versions for test and production.
+
+Objects
+
+The ParseObject
+
+Storing data on Parse is built around the ParseObject. Each ParseObject contains key-value pairs of JSON-compatible data. This data is schemaless, which means that you don't need to specify ahead of time what keys exist on each ParseObject. You simply set whatever key-value pairs you want, and our backend will store it.
+
+For example, let's say you're tracking high scores for a game. A single ParseObject could contain:
+
+score: 1337, playerName: "Sean Plott", cheatMode: false
+Keys must start with a letter, and can contain alphanumeric characters and underscores. Values can be strings, numbers, booleans, or even arrays and dictionaries - anything that can be JSON-encoded.
+
+Each ParseObject has a class name that you can use to distinguish different sorts of data. For example, we could call the high score object a GameScore. We recommend that you NameYourClassesLikeThis and nameYourKeysLikeThis, just to keep your code looking pretty.
+
+Saving Objects
+
+Let's say you want to save the GameScore described above to the Parse Cloud. The interface is similar to an IDictionary<string, object>, plus the SaveAsync method:
+
+ParseObject gameScore = new ParseObject("GameScore");
+gameScore["score"] = 1337;
+gameScore["playerName"] = "Sean Plott";
+await gameScore.SaveAsync();
+After this code runs, you will probably be wondering if anything really happened. To make sure the data was saved, you can look at the Data Browser in your app on Parse. You should see something like this:
+
+objectId: "xWMyZ4YEGZ", score: 1337, playerName: "Sean Plott", cheatMode: false,
+createdAt:"2011-06-10T18:33:42Z", updatedAt:"2011-06-10T18:33:42Z"
+There are two things to note here. You didn't have to configure or set up a new Class called GameScore before running this code. Your Parse app lazily creates this Class for you when it first encounters it.
+
+There are also a few fields you don't need to specify that are provided as a convenience. ObjectId is a unique identifier for each saved object. CreatedAt and UpdatedAt represent the time that each object was created and last modified in the Parse Cloud. Each of these fields is filled in by Parse, so they don't exist on a ParseObject until a save operation has completed.
+
+Data Types
+
+So far we've used values with type string and int assigned to fields of a ParseObject. Parse also supports fields containing:
+
+other primitive numeric values such as doubles, longs, or floats
+DateTime objects
+byte[] objects
+objects that implement IDictionary<string, T>
+objects that implement IList<T>
+other ParseObject
+You can nest IDictionary<string, T> and IList<T> objects to store more structured data within a single ParseObject.
+
+Some examples:
+
+int number = 42;
+string str = "the number is " + number;
+DateTime date = DateTime.Now;
+byte[] data = System.Text.Encoding.UTF8.GetBytes("foo");
+IList<object> list = new List<object> { str, number };
+IDictionary<string, object> dictionary = new Dictionary<string, object>
+{
+    { "number", number },
+    { "string", str }
+};
+ 
+var bigObject = new ParseObject("BigObject");
+bigObject["myNumber"] = number;
+bigObject["myString"] = str;
+bigObject["myDate"] = date;
+bigObject["myData"] = data;
+bigObject["myList"] = list;
+bigObject["myDictionary"] = dictionary;
+await bigObject.SaveAsync();
+We do not recommend storing large pieces of binary data like images or documents using byte[] fields on ParseObject. ParseObjects should not exceed 128 kilobytes in size.
+
+For more information about how Parse handles data, check out our documentation on Data & Security.
+
+Retrieving Objects
+
+Saving data to the cloud is fun, but it's even more fun to get that data out again. If you have the ObjectId, you can retrieve the whole ParseObject using a ParseQuery:
+
+ParseQuery<ParseObject> query = ParseObject.GetQuery("GameScore");
+ParseObject gameScore = await query.GetAsync("xWMyZ4YEGZ");
+To get the values out of the ParseObject, use the Get<T> method.
+
+int score = gameScore.Get<int>("score");
+string playerName = gameScore.Get<string>("playerName");
+bool cheatMode = gameScore.Get<bool>("cheatMode");
+The three special values are provided as properties:
+
+string objectId = gameScore.ObjectId;
+DateTime? updatedAt = gameScore.UpdatedAt;
+DateTime? createdAt = gameScore.CreatedAt;
+If you need to get an object's latest data from Parse, you can call the FetchAsync method like so:
+
+await myObject.FetchAsync();
+Updating Objects
+
+Updating an object is simple. Just set some new data on it and call one of the save methods. For example:
+
+// Create the object.
+var gameScore = new ParseObject("GameScore")
+{
+    { "score", 1337 },
+    { "playerName", "Sean Plott" },
+    { "cheatMode", false },
+    { "skills", new List<string> { "pwnage", "flying" } },
+};
+await gameScore.SaveAsync();
+ 
+// Now let's update it with some new data.  In this case, only cheatMode 
+// and score will get sent to the cloud.  playerName hasn't changed.
+gameScore["cheatMode"] = true;
+gameScore["score"] = 1338;
+await gameScore.SaveAsync();
+The client automatically figures out which data has changed so only "dirty" fields will be sent to Parse. You don't need to worry about squashing data that you didn't intend to update.
+
+Counters
+
+The above example contains a common use case. The "score" field is a counter that we'll need to continually update with the player's latest score. Using the above method works but it's cumbersome and can lead to problems if you have multiple clients trying to update the same counter.
+
+To help with storing counter-type data, Parse provides methods that atomically increment (or decrement) any number field. So, the same update can be rewritten as:
+
+gameScore.Increment("score");
+await gameScore.SaveAsync();
+You can also increment by any amount using Increment(key, amount).
+
+Lists
+
+To help with storing list data, there are three operations that can be used to atomically change a list field:
+
+AddToList and AddRangeToList append the given objects to the end of an list field.
+AddUniqueToList and AddRangeUniqueToList add only the given objects which aren't already contained in an list field to that field. The position of the insert is not guaranteed.
+RemoveAllFromList removes all instances of each given object from an array field.
+For example, we can add items to the set-like "skills" field like so:
+
+gameScore.AddRangeUniqueToList("skills", new[] { "flying", "kungfu" });
+await gameScore.SaveAsync();
+Deleting Objects
+
+To delete an object from the cloud:
+
+await myObject.DeleteAsync();
+You can delete a single field from an object with the Remove method:
+
+// After this, the playerName field will be empty
+myObject.Remove("playerName");
+ 
+// Saves the field deletion to the Parse Cloud
+await myObject.SaveAsync();
+Relational Data
+
+Objects can have relationships with other objects. To model one-to-many relationships, any ParseObject can be used as a value in other ParseObjects. Internally, the Parse framework will store the referred-to object in just one place to maintain consistency.
+
+For example, each Comment in a blogging app might correspond to one Post. To create a new Post with a single Comment, you could write:
+
+// Create the post
+var myPost = new ParseObject("Post")
+{
+    { "title", "I'm Hungry" },
+    { "content", "Where should we go for lunch?" }    
+};
+ 
+// Create the comment
+var myComment = new ParseObject("Comment")
+{
+    { "content", "Let's do Sushirrito." }
+};
+ 
+// Add a relation between the Post and Comment
+myComment["parent"] = myPost;
+ 
+// This will save both myPost and myComment
+await myComment.SaveAsync();
+You can also link objects using just their ObjectIds like so:
+
+myComment["parent"] = ParseObject.CreateWithoutData("Post", "1zEcyElZ80");
+By default, when fetching an object, related ParseObjects are not fetched. These objects' values cannot be retrieved until they have been fetched like so:
+
+ParseObject post = fetchedComment.Get<ParseObject>("parent");
+await post.FetchIfNeededAsync();
+For a many-to-many relationship, use the ParseRelation object. This works similar to a List<ParseObject>, except that you don't need to download all the objects in a relation at once. This allows ParseRelation to scale to many more objects than the List<ParseObject> approach. For example, a ParseUser may have many Posts that they might like. In this case, you can store the set of Posts that a ParseUser likes using GetRelation. In order to add a post to the list, the code would look something like:
+
+var user = ParseUser.CurrentUser;
+var relation = user.GetRelation<ParseObject>("likes");
+relation.Add(post);
+await user.SaveAsync();
+You can remove a post from the ParseRelation with something like:
+
+relation.Remove(post);
+By default, the list of objects in this relation are not downloaded. You can get the list of Posts by using calling FindAsync on the ParseQuery returned by Query. The code would look like:
+
+IEnumerable<ParseObject> relatedObjects = await relation.Query.FindAsync();
+If you want only a subset of the Posts you can add extra constraints to the ParseQuery returned by Query like this:
+
+var query = from post in relation.Query
+            where post.CreatedAt > DateTime.Now - TimeSpan.FromDays(10)
+                  // alternatively, add any other query constraints
+            select post;
+var relatedObjects = await query.FindAsync();
+LINQMethods
+For more details on ParseQuery please look at the query portion of this guide. A ParseRelation behaves similar to a List<ParseObject>, so any queries you can do on lists of objects you can do on ParseRelations.
+
+Queries
+
+We've already seen how a ParseQuery with GetAsync can retrieve a single ParseObject from Parse. There are many other ways to retrieve data with ParseQuery - you can retrieve many objects at once, put conditions on the objects you wish to retrieve, and more.
+
+Basic Queries
+
+In many cases, GetAsync isn't powerful enough to specify which objects you want to retrieve. The ParseQuery offers different ways to retrieve a list of objects rather than just a single object.
+
+The general pattern is to create a ParseQuery, constraints to it, and then retrieve an IEnumerable of matching ParseObjectss using FindAsync. While ParseQuery supports a method-based approach for building your query, we highly recommend you use LINQ. This allows to use the full power of the LINQ C# and Visual Basic language features to create rich queries over your data.
+
+For example, to retrieve scores with a particular playerName, use a "where" clause to constrain the value for a key.
+
+var query = from gameScore in ParseObject.GetQuery("GameScore")
+            where gameScore.Get<string>("playerName") == "Dan Stemkoski"
+            select gameScore;
+IEnumerable<ParseObject> results = await query.FindAsync();
+LINQMethods
+Query Constraints
+
+There are several ways to put constraints on the objects found by a ParseQuery. You can filter out objects with a particular key-value pair with a LINQ where ... != ... clause or a call to WhereNotEqualTo:
+
+var query = from gameScore in ParseObject.GetQuery("GameScore")
+            where gameScore.Get<string>("playerName") != "Michael Yabuti"
+            select gameScore;
+LINQMethods
+You can give multiple constraints, and objects will only be in the results if they match all of the constraints. In other words, it's like an AND of constraints.
+
+// The following queries are equivalent:
+var query1 = from gameScore in ParseObject.GetQuery("GameScore")
+             where !gameScore.Get<string>("playerName").Equals("Michael Yabuti")
+             where gameScore.Get<int>("playerAge") > 18
+             select gameScore;
+ 
+var query2 = from gameScore in ParseObject.GetQuery("GameScore")
+             where !gameScore.Get<string>("playerName").Equals("Michael Yabuti")
+                 && gameScore.Get<int>("playerAge") > 18
+             select gameScore;
+LINQMethods
+You can limit the number of results by calling Limit. By default, results are limited to 100, but anything from 1 to 1000 is a valid limit:
+
+query = query.Limit(10); // limit to at most 10 results
+If you want exactly one result, a more convenient alternative may be to use FirstAsync or FirstOrDefaultAsync instead of using FindAsync.
+
+var query = from gameScore in ParseObject.GetQuery("GameScore")
+            where gameScore.Get<string>("playerEmail") == "dstemkoski@example.com"
+            select gameScore;
+ParseObject obj = await query.FirstAsync();
+LINQMethods
+You can skip the first results by calling Skip. This can be useful for pagination:
+
+query = query.Skip(10); // skip the first 10 results
+For sortable types like numbers and strings, you can control the order in which results are returned:
+
+// Sorts the results in ascending order by score and descending order by playerName
+var query = from gameScore in ParseObject.GetQuery("GameScore")
+            orderby gameScore.Get<int>("score") descending, gameScore.Get<string>("playerName")
+            select gameScore;
+LINQMethods
+For sortable types, you can also use comparisons in queries:
+
+// Restricts to wins < 50
+query = from gameScore in query
+        where gameScore.Get<int>("wins") < 50
+        select gameScore;
+ 
+// Restricts to wins <= 50
+query = from gameScore in query
+        where gameScore.Get<int>("wins") <= 50
+        select gameScore;
+ 
+// Restricts to wins > 50
+query = from gameScore in query
+        where gameScore.Get<int>("wins") > 50
+        select gameScore;
+ 
+// Restricts to wins >= 50
+query = from gameScore in query
+        where gameScore.Get<int>("wins") >= 50
+        select gameScore;
+LINQMethods
+If you want to retrieve objects matching several different values, you can use WhereContainedIn or a Contains LINQ query, providing an list of acceptable values. This is often useful to replace multiple queries with a single query. For example, if you want to retrieve scores made by any player in a particular list:
+
+// Finds scores from any of Jonathan, Dario, or Shawn
+var names = new[] { "Jonathan Walsh", "Dario Wunsch", "Shawn Simon" };
+var query = from gameScore in ParseObject.GetQuery("GameScore")
+            where names.Contains(gameScore.Get<string>("playerName"))
+            select gameScore;
+LINQMethods
+If you want to retrieve objects that do not match any of several values you can use WhereNotContainedIn or a !Contains LINQ query, providing an list of acceptable values. For example, if you want to retrieve scores from players besides those in a list:
+
+// Finds scores from any of Jonathan, Dario, or Shawn
+var names = new[] { "Jonathan Walsh", "Dario Wunsch", "Shawn Simon" };
+var query = from gameScore in ParseObject.GetQuery("GameScore")
+            where !names.Contains(gameScore.Get<string>("playerName"))
+            select gameScore;
+LINQMethods
+If you want to retrieve objects that have a particular key set, you can use WhereExists or an ContainsKey LINQ query. Conversely, if you want to retrieve objects without a particular key set, you can use WhereDoesNotExist or an !ContainsKey LINQ query.
+
+// Finds objects that have the score set
+var query = from gameScore in ParseObject.GetQuery("GameScore")
+            where gameScore.ContainsKey("score")
+            select gameScore;
+ 
+// Finds objects that don't have the score set
+var query = from gameScore in ParseObject.GetQuery("GameScore")
+            where !gameScore[.ContainsKey("score")
+            select gameScore;
+LINQMethods
+You can use the WhereMatchesKeyInQuery method or a join LINQ query to get objects where a key matches the value of a key in a set of objects resulting from another query. For example, if you have a class containing sports teams and you store a user's hometown in the user class, you can issue one query to find the list of users whose hometown teams have winning records. The query would look like:
+
+var teamQuery = from team in ParseObject.GetQuery("Team")
+                where team.Get<double>("winPct") > 0.5
+                select team;
+var userQuery = from user in ParseUser.Query
+                join team in teamQuery on user["hometown"] equals team["city"]
+                select user;
+IEnumerable<ParseUser> results = await userQuery.FindAsync();
+// results will contain users with a hometown team with a winning record
+LINQMethods
+Queries on List Values
+
+For keys with an array type, you can find objects where the key's array value contains 2 by:
+
+// Find objects where the list in listKey contains 2.
+var query = from obj in ParseObject.GetQuery("MyClass")
+            where obj.Get<IList<int>>("listKey").Contains(2)
+            select obj;
+LINQMethods
+Queries on String Values
+
+There are several ways you can search over values containing strings. For any regular expression, you can use WhereMatches to retrieve only the values that match it:
+
+// Finds barbecue sauces that start with a capital letter and a digit.
+var query = ParseObject.GetQuery("BarbecueSauce")
+    .WhereMatches("name", "^[A-Z]\\d");
+ 
+var results = await query.FindAsync();
+// The sauces could have, for example, name = "A1 Steak Sauce"
+Parse uses the Perl-compatible regular expression format. If you use a .NET Regex object to specify a regular expression, you must use the ECMAScript option.
+
+ParseQuery also supports regular expression modifiers. The supported PCRE modifiers are:
+i - Case insensitive search
+m - Search across multiple lines of input
+// Some people type "BBQ", others type "bbq". Consider them the same thing with the
+// i modifier. The m modifier helps us find sauces that call themselves "bbq sauce"
+// after the first line of text.
+var query = ParseObject.GetQuery("BarbecueSauce")
+    .WhereMatches("description", "bbq", "im");
+ 
+var results = await query.FindAsync();
+// results will contain sauces that call themselves a "bbq" sauce.
+There are also several helper functions for standard string operations: substrings, prefixes, and suffixes. Use WhereContains or an Contains LINQ query to restrict to string values containing a substring:
+
+// Finds barbecue sauces that contain the string "Extra Spicy!".
+var query = from sauce in ParseObject.GetQuery("BarbecueSauce")
+            where sauce.Get<string>("name").Contains("Extra Spicy!")
+            select sauce;
+LINQMethods
+Use WhereStartsWith or a StartsWith LINQ query to restrict to string values that start with a particular string. Similar to a MySQL LIKE operator, this is indexed so it is efficient for large datasets:
+
+// Finds barbecue sauces that start with "Big Daddy's".
+var query = from sauce in ParseObject.GetQuery("BarbecueSauce")
+            where sauce.Get<string>("name").StartsWith("Big Daddy's")
+            select sauce;
+LINQMethods
+Use WhereEndsWith or an EndsWith LINQ query to restrict to string values that end with a particular string:
+
+// Finds barbecue sauces that end with "Original Recipe".
+var query = from sauce in ParseObject.GetQuery("BarbecueSauce")
+            where sauce.Get<string>("name").EndsWith("Original Recipe")
+            select sauce;
+LINQMethods
+Relational Queries
+
+There are several ways to issue queries for relational data. If you want to retrieve objects where a field matches a particular ParseObject, you can use WhereEqualTo or a == LINQ query just like for other data types. For example, if each Comment has a Post object in its post field, you can fetch comments for a particular Post:
+
+// Assume ParseObject myPost was previously created.
+var query = from comment in ParseObject.GetQuery("Comment")
+            where comment["post"] == myPost
+            select comment;
+ 
+var comments = await query.FindAsync();
+// comments now contains the comments for myPost
+LINQMethods
+You can also do relational queries by ObjectId:
+
+var query = from comment in ParseObject.GetQuery("Comment")
+            where comment["post"] == ParseObject.ObjectWithoutData("Post", "1zEcyElZ80")
+            select comment;
+LINQMethods
+If you want to retrieve objects where a field contains a ParseObject that matches a different query, you can use WhereMatchesQuery or a join LINQ query. Note that the default limit of 100 and maximum limit of 1000 apply to the inner query as well, so with large data sets you may need to construct queries carefully to get the desired behavior. In order to find comments for posts with images, you can do:
+
+var imagePosts = from post in ParseObject.GetQuery("Post")
+                 where post.ContainsKey("image")
+                 select post;
+var query = from comment in ParseObject.GetQuery("Comment")
+            join post in imagePosts on comment["post"] equals post
+            select comment;
+ 
+var comments = await query.FindAsync();
+// comments now contains the comments for posts with images
+LINQMethods
+If you want to retrieve objects where a field contains a ParseObject that does not match a different query, you can use WhereDoesNotMatchQuery. In order to find comments for posts without images, you can do:
+
+var imagePosts = from post in ParseObject.GetQuery("Post")
+                 where post.ContainsKey("image")
+                 select post;
+var query = ParseObject.GetQuery("Comment")
+    .WhereDoesNotMatchQuery("post", imagePosts);
+ 
+var comments = await query.FindAsync();
+// comments now contains the comments for posts without images
+LINQMethods
+In some situations, you want to return multiple types of related objects in one query. You can do this with the Include method. For example, let's say you are retrieving the last ten comments, and you want to retrieve their related posts at the same time:
+
+// Retrieve the most recent comments
+var query = from comment in ParseObject.GetQuery("Comment")
+                                       // Only retrieve the last 10 comments
+                                       .Limit(10)
+                                       // Include the post data with each comment
+                                       .Include("post")
+            orderby comment.CreatedAt descending
+            select comment;
+ 
+var comments = await comments.FindAsync();
+ 
+// Comments now contains the last ten comments, and the "post" field
+// contains an object that has already been fetched.  For example:
+foreach (var comment in comments)
+{
+    // This does not require a network access.
+    var post = comment.Get<ParseObject>("post");
+    Debug.WriteLine("Post title: " + post["title"]);
+}
+LINQMethods
+You can also do multi level includes using dot notation. If you wanted to include the post for a comment and the post's author as well you can do:
+
+query = query.Include("post.author");
+You can issue a query with multiple fields included by calling includeKey: multiple times. This functionality also works with ParseQuery helpers like FirstAsync and GetAsync
+
+Counting Objects
+
+If you just need to count how many objects match a query, but you do not need to retrieve the objects that match, you can use CountAsync instead of FindAsync. For example, to count how many games have been played by a particular player:
+
+var query = from gameScore in ParseObject.GetQuery("GameScore")
+            where gameScore["playerName"] == "Sean Plott"
+            select gameScore;
+var count = await query.CountAsync();
+LINQMethods
+Compound Queries
+
+If you want to find objects that match one of several queries, you can use the Or method. For instance, if you want to find players with either have a lot of wins or a few wins, you can do:
+
+var lotsOfWins = from player in ParseObject.GetQuery("Player")
+                 where player.Get<int>("wins") > 150
+                 select player;
+ 
+var fewWins = from player in ParseObject.GetQuery("Player")
+              where player.Get<int>("wins") < 5
+              select player;
+ 
+ParseQuery<ParseObject> query = lotsOfWins.Or(fewWins);
+ 
+var results = await query.FindAsync();
+// results contains players with lots of wins or only a few wins.
+LINQMethods
+You can also add more constraints to the newly created ParseQuery that also need to match for the objects returned.
+
+Files
+
+The ParseFile
+
+ParseFile lets you store application files in the cloud that would otherwise be too large or cumbersome to fit into a regular ParseObject. The most common use case is storing images but you can also use it for documents, videos, music, and any other binary data (up to 10 megabytes).
+
+Getting started with ParseFile is easy. First, you'll need to have the data in byte[] or Stream form and then create a ParseFile with it. In this example, we'll just use a string:
+
+byte[] data = System.Text.Encoding.UTF8.GetBytes("Working at Parse is great!");
+ParseFile file = new ParseFile("resume.txt", data);
+Notice in this example that we give the file a name of resume.txt. There's two things to note here:
+
+You don't need to worry about filename collisions. Each upload gets a unique identifier so there's no problem with uploading multiple files named resume.txt.
+It's important that you give a name to the file that has a file extension. This lets Parse figure out the file type and handle it accordingly. So, if you're storing PNG images, make sure your filename ends with .png.
+Next you'll want to save the file up to the cloud. As with ParseObject, you can call SaveAsync to save the file to Parse.
+
+await file.SaveAsync();
+Finally, after the save completes, you can assign a ParseFile into a ParseObject just like any other piece of data:
+
+var jobApplication = new ParseObject("JobApplication");
+jobApplication["applicantName"] = "Joe Smith";
+jobApplication["applicantResumeFile"] = file;
+await jobApplication.SaveAsync();
+Retrieving it back involves downloading the resource at the ParseFile's Url. Here we retrieve the resume file off another JobApplication object:
+
+var applicantResumeFile = anotherApplication.Get<ParseFile>("applicantResumeFile");
+string resumeText = await new HttpClient().GetStringAsync(applicantResumeFile.Url);
+Progress
+
+It's easy to get the progress of ParseFile uploads by passing a Progress object to SaveAsync. For example:
+
+byte[] data = System.Text.Encoding.UTF8.GetBytes("Working at Parse is great!");
+ParseFile file = new ParseFile("resume.txt", data);
+ 
+await file.SaveAsync(new Progress<ParseUploadProgressEventArgs>(e => {
+    // Check e.Progress to get the progress of the file upload
+});
+Users
+
+At the core of many apps, there is a notion of user accounts that lets users access their information in a secure manner. We provide a specialized user class called ParseUser that automatically handles much of the functionality required for user account management.
+
+With this class, you'll be able to add user account functionality in your app.
+
+ParseUser is a subclass of ParseObject and has all the same features, such as flexible schema, automatic persistence, and a key value interface. All the methods that are on ParseObject also exist in ParseUser. The difference is that ParseUser has some special additions specific to user accounts.
+
+Properties
+
+ParseUser has several properties that set it apart from ParseObject:
+
+Username: The username for the user (required).
+Password: The password for the user (required on signup).
+Email: The email address for the user (optional).
+We'll go through each of these in detail as we run through the various use cases for users. Keep in mind that if you set Username and Email through these properties, you do not need to set it using the indexer on ParseObject — this is set for you automatically.
+
+Signing Up
+
+The first thing your app will do is probably ask the user to sign up. The following code illustrates a typical sign up:
+
+public async void SignUpButton_Click(object sender, RoutedEventArgs e)
+{
+    var user = new ParseUser()
+    {
+        Username = "my name",
+        Password = "my pass",
+        Email = "email@example.com"
+    };
+ 
+    // other fields can be set just like with ParseObject
+    user["phone"] = "415-392-0202";
+ 
+    await user.SignUpAsync();
+}
+This call will asynchronously create a new user in your Parse App. Before it does this, it also checks to make sure that both the username and email are unique. Also, it securely hashes the password in the cloud. We never store passwords in plaintext, nor will we ever transmit passwords back to the client in plaintext.
+
+Note that we used the SignUpAsync method, not the SaveAsync method. New ParseUsers should always be created using the SignUpAsync method. Subsequent updates to a user can be done by calling SaveAsync.
+
+If a signup isn't successful, you should catch the exception thrown by the SignUpAsync. The most likely case is that the username or email has already been taken by another user. You should clearly communicate this to your users, and ask them try a different username.
+
+You are free to use an email address as the username. Simply ask your users to enter their email, but fill it in both the Username and Email properties — ParseObject will work as normal. We'll go over how this is handled in the reset password section.
+
+Logging In
+
+Of course, after you allow users to sign up, you need to let them log in to their account in the future. To do this, you can use the class method LogInAsync.
+
+try
+{
+    await ParseUser.LogInAsync("myname", "mypass");
+    // Login was successful.
+}
+catch (Exception e)
+{
+    // The login failed. Check the error to see why.
+}
+Verifying Emails
+
+Enabling email verification in an application's settings allows the application to reserve part of its experience for users with confirmed email addresses. Email verification adds the emailVerified key to the ParseUser object. When a ParseUser's Email is set or modified, emailVerified is set to false. Parse then emails the user a link which will set emailVerified to true.
+
+There are three emailVerified states to consider:
+
+true - the user confirmed his or her email address by clicking on the link Parse emailed them. ParseUsers can never have a true value when the user account is first created.
+false - at the time the ParseUser object was last refreshed, the user had not confirmed his or her email address. If emailVerified is false, consider calling FetchAsync on the ParseUser.
+missing - the ParseUser was created when email verification was off or the ParseUser does not have an email.
+Current User
+
+It would be bothersome if the user had to log in every time they open your app. You can avoid this by using the cached ParseUser.CurrentUser object.
+
+Whenever you use any signup or login methods, the user is cached on disk. You can treat this cache as a session, and automatically assume the user is logged in:
+
+if (ParseUser.CurrentUser != null)
+{
+    // do stuff with the user
+}
+else
+{
+    // show the signup or login screen
+}
+You can clear the current user by logging them out:
+
+ParseUser.LogOut();
+var currentUser = ParseUser.CurrentUser; // this will now be null
+Security For User Objects
+
+The ParseUser class is secured by default. Data stored in a ParseUser can only be modified by that user. By default, the data can still be read by any client. Thus, some ParseUser objects are authenticated and can be modified, whereas others are read-only.
+
+Specifically, you are not able to invoke the SaveAsync or DeleteAsync methods unless the ParseUser was obtained using an authenticated method, like LogInAsync or SignUpAsync. This ensures that only the user can alter their own data.
+
+The following illustrates this security policy:
+
+var user = await ParseUser.LogInAsync("my_username", "my_password");
+user.Username = "my_new_username"; // attempt to change username
+await user.SaveAsync(); // This succeeds, since this user was
+                        // authenticated on the device
+ 
+ParseUser.LogOut();
+// Get the user from a non-authenticated method
+user = await ParseUser.Query.GetAsync(user.ObjectId);
+user.Username = "another_username";
+ 
+// This will throw an exception, since the ParseUser is not authenticated
+await user.SaveAsync();
+The ParseUser obtained from Current will always be authenticated.
+
+If you need to check if a ParseUser is authenticated, you can check the IsAuthenticated property. You do not need to check IsAuthenticated with ParseUser objects that are obtained via an authenticated method.
+
+Security For Other Objects
+
+The same security model that applies to the ParseUser can be applied to other objects. For any object, you can specify which users are allowed to read the object, and which users are allowed to modify an object. To support this type of security, each object has an access control list, implemented by the ParseACL class.
+
+The simplest way to use a ParseACL is to specify that an object may only be read or written by a single user. To create such an object, there must first be a logged in ParseUser. Then, the ParseACL constructor generates a ParseACL that limits access to that user. An object's ACL is updated when the object is saved, like any other property. Thus, to create a private note that can only be accessed by the current user:
+
+var privateNote = new ParseObject("Note");
+privateNote["content"] = "This note is private!";
+privateNote.ACL = new ParseACL(ParseUser.CurrentUser);
+await privateNote.SaveAsync();
+This note will then only be accessible to the current user, although it will be accessible to any device where that user is signed in. This functionality is useful for applications where you want to enable access to user data across multiple devices, like a personal todo list.
+
+Permissions can also be granted on a per-user basis. You can add permissions individually to a ParseACL using SetReadAccess and SetWriteAccess. For example, let's say you have a message that will be sent to a group of several users, where each of them have the rights to read and delete that message:
+
+var groupMessage = new ParseObject("Message");
+var groupACL = new ParseACL();
+ 
+// userList is an IEnumerable<ParseUser> with the users we are sending
+// this message to.
+foreach (var user in userList)
+{
+    groupACL.SetReadAccess(user, true);
+    groupACL.SetWriteAccess(user, true);
+}
+ 
+groupMessage.ACL = groupACL;
+await groupMessage.SaveAsync();
+You can also grant permissions to all users at once using the PublicReadAccess and PublicWriteAccess properties. This allows patterns like posting comments on a message board. For example, to create a post that can only be edited by its author, but can be read by anyone:
+
+var publicPost = new ParseObject("Post");
+var postACL = new ParseACL(ParseUser.CurrentUser)
+{
+    PublicReadAccess = true,
+    PublicWriteAccess = false
+};
+publicPost.ACL = postACL;
+await publicPost.SaveAsync();
+Operations that are forbidden, such as deleting an object that you do not have write access to, result in a ParseException with a ObjectNotFound error code. For security purposes, this prevents clients from distinguishing which object ids exist but are secured, versus which object ids do not exist at all.
+
+Resetting Passwords
+
+As soon as you introduce passwords into a system, users will forget them. In such cases, our library provides a way to let them securely reset their password.
+
+To kick off the password reset flow, ask the user for their email address, and call:
+
+await ParseUser.RequestPasswordResetAsync("email@example.com");
+This will attempt to match the given email with the user's email or username field, and will send them a password reset email. By doing this, you can opt to have users use their email as their username, or you can collect it separately and store it in the email field.
+
+The flow for password reset is as follows:
+
+User requests that their password be reset by typing in their email.
+Parse sends an email to their address, with a special password reset link.
+User clicks on the reset link, and is directed to a special Parse page that will allow them type in a new password.
+User types in a new password. Their password has now been reset to a value they specify.
+Note that the messaging in this flow will reference your app by the name that you specified when you created this app on Parse.
+
+Querying
+
+To query for users, you need to use the special user query:
+
+var women = await (from user in ParseUser.Query
+                   where user.Get<string>("gender") == "female"
+                   select user).FindAsync();
+LINQMethods
+In addition, you can use GetAsync to get a ParseUser by id.
+
+Associations
+
+Associations involving a ParseUser work right out of the box. For example, let's say you're making a blogging app. To store a new post for a user and retrieve all their posts:
+
+// Make a new post
+var post = new ParseObject("Post")
+{
+    { "title", "My New Post" },
+    { "body", "This is some great content." },
+    { "user", ParseUser.CurrentUser }
+};
+await post.SaveAsync();
+ 
+// Find all posts by the current user
+var usersPosts = await (from post in ParseObject.GetQuery("Post")
+                        where post.Get<ParseUser>("user") == ParseUser.CurrentUser
+                        select post).FindAsync();
+LINQMethods
+Users in the Data Browser
+
+The User class is a special class that is dedicated to storing ParseUser objects. In the data browser, you'll see a little person icon next to the User class:
+
+
+
+Roles
+
+As your app grows in scope and user-base, you may find yourself needing more coarse-grained control over access to pieces of your data than user-linked ACLs can provide. To address this requirement, Parse supports a form of Role-based Access Control. Roles provide a logical way of grouping users with common access privileges to your Parse data. Roles are named objects that contain users and other roles. Any permission granted to a role is implicitly granted to its users as well as to the users of any roles that it contains.
+
+For example, in your application with curated content, you may have a number of users that are considered "Moderators" and can modify and delete content created by other users. You may also have a set of users that are "Administrators" and are allowed all of the same privileges as Moderators, but can also modify the global settings for the application. By adding users to these roles, you can ensure that new users can be made moderators or administrators, without having to manually grant permission to every resource for each user.
+
+We provide a specialized class called ParseRole that represents these role objects in your client code. ParseRole is a subclass of ParseObject, and has all of the same features, such as a flexible schema, automatic persistence, and a key value interface. All the methods that are on ParseObject also exist on ParseRole. The difference is that ParseRole has some additions specific to management of roles.
+
+Properties
+
+ParseRole has several properties that set it apart from ParseObject:
+
+name: The name for the role. This value is required, must be unique, and can only be set once as a role is being created. The name must consist of alphanumeric characters, spaces, -, or _. This name will be used to identify the Role without needing its objectId.
+users: A relation to the set of users that will inherit permissions granted to the containing role.
+roles: A relation to the set of roles whose users and roles will inherit permissions granted to the containing role.
+Security for Role Objects
+
+The ParseRole uses the same security scheme (ACLs) as all other objects on Parse, except that it requires an ACL to be set explicitly. Generally, only users with greatly elevated privileges (e.g. a master user or Administrator) should be able to create or modify a Role, so you should define its ACLs accordingly. Remember, if you give write-access to a ParseRole to a user, that user can add other users to the role, or even delete the role altogether.
+
+To create a new ParseRole, you would write:
+
+// By specifying no write privileges for the ACL, we can ensure the role cannot be altered.
+var roleACL = new ParseACL()
+roleACL.PublicReadAccess = true;
+var role = new ParseRole("Administrator", roleACL);
+await role.SaveAsync();
+You can add users and roles that should inherit your new role's permissions through the "users" and "roles" relations on ParseRole:
+
+var role = new ParseRole(roleName, roleACL);
+foreach (ParseUser user in usersToAddToRole)
+{
+    role.Users.Add(user);
+}
+foreach (ParseRole childRole in rolesToAddToRole)
+{
+    role.Roles.Add(childRole);
+}
+await role.SaveAsync();
+Take great care when assigning ACLs to your roles so that they can only be modified by those who should have permissions to modify them.
+
+Security for Other Objects
+
+Now that you have created a set of roles for use in your application, you can use them with ACLs to define the privileges that their users will receive. Each ParseObject can specify a ParseACL, which provides an access control list that indicates which users and roles should be granted read or write access to the object.
+
+Giving a role read or write permission to an object is straightforward. You can either use the ParseRole:
+
+var moderators = await (from role in ParseRole.Query
+                        where role.Name == "Moderators"
+                        select role).FirstAsync();
+var wallPost = new ParseObject("WallPost");
+var postACL = new ParseACL();
+postACL.SetRoleWriteAccess(moderators, true);
+wallPost.ACL = postACL;
+await wallPost.SaveAsync();
+You can avoid querying for a role by specifying its name for the ACL:
+
+var wallPost = new ParseObject("WallPost");
+var postACL = new ParseACL();
+postACL.SetRoleWriteAccess("Moderators", true);
+wallPost.ACL = postACL;
+await wallPost.SaveAsync();
+Role Hierarchy
+
+As described above, one role can contain another, establishing a parent-child relationship between the two roles. The consequence of this relationship is that any permission granted to the parent role is implicitly granted to all of its child roles.
+
+These types of relationships are commonly found in applications with user-managed content, such as forums. Some small subset of users are "Administrators", with the highest level of access to tweaking the application's settings, creating new forums, setting global messages, and so on. Another set of users are "Moderators", who are responsible for ensuring that the content created by users remains appropriate. Any user with Administrator privileges should also be granted the permissions of any Moderator. To establish this relationship, you would make your "Administrators" role a child role of "Moderators", like this:
+
+ParseRole administrators = /* Your "Administrators" role */;
+ParseRole moderators = /* Your "Moderators" role */;
+moderators.Roles.Add(administrators);
+await moderators.SaveInBackground();
+Role Quotas
+
+Role-based access control is a premium feature of the Parse platform. If you are on the "Basic" plan are limited to 1 custom role, which you can use to protect access for most basic applications that need broader security groups. Parse will not allow you to exceed this quota by accident, preventing you from creating new Roles until you upgrade your plan.
+
+If your current plan is "Pro" or above, you will have an allotment of roles included with your package, and creating Roles exceeding this quota will result in additional charges.
+
+For more information, please see our Plans page.
+
+Facebook Users
+
+Parse provides an easy way to integrate Facebook with your application. The ParseFacebookUtils class integrates with ParseUser to make linking your users to their Facebook identities easy.
+
+Using our Facebook integration, you can associate an authenticated Facebook user with a ParseUser. With just a few lines of code, you'll be able to provide a "log in with Facebook" option in your app, and be able to save their data to Parse.
+
+Setup
+
+To start using Facebook with Parse, you need to:
+
+Set up a Facebook app, if you haven't already. In the "Advanced" tab of your app's settings page, Make sure that your app's "App Type" (in the "Authentication" section) is set to "Native/Desktop".
+Add your application's Facebook Application ID on your Parse application's settings page.
+In your Application constructor, call ParseFacebookUtils.Initialize() with your Facebook App ID:
+public App()
+{
+    // App.xaml initialization
+    ParseClient.Initialize("Your Application ID", "Your Windows Key");
+    ParseFacebookUtils.Initialize("Your Facebook App Id");
+    // Other initialization
+}
+There are two main ways to use Facebook with your Parse users: (1) logging in as a Facebook user and creating a ParseUser, or (2) linking Facebook to an existing ParseUser.
+
+Login & Signup
+
+ParseFacebookUtils provides a way to allow your ParseUsers to log in or sign up through Facebook. This is accomplished using the LogInAsync() method. To display Facebook's web browser OAuth flow to your users, you'll need to pass LogInAsync a web browser control (which you'll usually define in XAML) and dismiss it when you've completed login:
+
+// Make your browser control visible
+ParseUser user = await ParseFacebookUtils.LogInAsync(browser, null);
+// Hide your browser control
+When this code is run, the following happens:
+
+The user is shown the Facebook login dialog.
+The user authenticates via Facebook, and your app receives a callback.
+Our SDK receives the Facebook data and saves it to a ParseUser. If it's a new user based on the Facebook ID, then that user is created.
+The awaited Task completes and your code continues executing.
+You may optionally provide a list of strings that specifies what permissions your app requires from the Facebook user. For example:
+
+// Make your browser control visible
+try
+{
+    ParseUser user = await ParseFacebookUtils.LogInAsync(
+        browser, new[] { "user_likes", "email" });
+    // The user logged in with Facebook!
+}
+catch
+{
+    // User cancelled the Facebook login or did not fully authorize.
+}
+// Hide your browser control
+ParseUser integration doesn't require any permissions to work out of the box (ie. null or specifying no permissions is perfectly acceptable). Read more about permissions on Facebook's developer guide.
+
+It is up to you to record any data that you need from the Facebook user after they authenticate. To accomplish this, you can use Microsoft's Facebook SDK.
+Linking
+
+If you want to associate an existing ParseUser with a Facebook account, you can link it like so:
+
+if (!ParseFacebookUtils.IsLinked(user))
+{
+    // Make your browser control visible
+    try
+    {
+        await ParseFacebookUtils.LinkAsync(user, browser, null);
+        // The user logged in with Facebook!
+    }
+    catch
+    {
+        // User cancelled the Facebook login or did not fully authorize.
+    }
+    // Hide your browser control
+}
+The steps that happen when linking are very similar to log in. The difference is that on successful login, the existing ParseUser is updated with the Facebook information. Future logins via Facebook will now log the user into their existing account.
+
+If you want to unlink a Facebook account from a user, simply do this:
+
+await ParseFacebookUtils.UnlinkAsync(user);
+Facebook SDK and Parse
+
+Microsoft provides an open-source SDK for making Graph API requests to Facebook. The SDK is available on NuGet, and you can learn more about it from their website.
+
+To use the Facebook SDK to fetch information about the current user, for example, you would install it using NuGet and then write code similar to this:
+
+var fb = new FacebookClient();
+fb.AccessToken = ParseFacebookUtils.AccessToken;
+var me = await fb.GetTaskAsync("me");
+With the AccessToken provided by ParseFacebookUtils, you should be able to use your choice of 3rd party Facebook SDKs to interact with Facebook on behalf of your user.
+
+GeoPoints
+
+Parse allows you to associate real-world latitude and longitude coordinates with an object. Adding a ParseGeoPoint to a ParseObject allows queries to take into account the proximity of an object to a reference point. This allows you to easily do things like find out what user is closest to another user or which places are closest to a user.
+
+ParseGeoPoint
+
+To associate a point with an object you first need to create a ParseGeoPoint. For example, to create a point with latitude of 40.0 degrees and -30.0 degrees longitude:
+
+var point = new ParseGeoPoint(40.0, -30.0);
+This point is then stored in the object as a regular field.
+
+placeObject["location"] = point;
+Note: Currently only one key in a class may be a ParseGeoPoint.
+
+Geo Queries
+
+Now that you have a bunch of objects with spatial coordinates, it would be nice to find out which objects are closest to a point. This can be done by adding another restriction to a ParseQuery using WhereNear. Getting a list of ten places that are closest to a user may look something like:
+
+// User's location
+var userGeoPoint = ParseUser.CurrentUser.Get<ParseGeoPoint>("location");
+// Create a query for places
+var query = ParseObject.GetQuery("PlaceObject");
+//Interested in locations near user.
+query = query.WhereNear("location", userGeoPoint);
+// Limit what could be a lot of points.
+query = query.Limit(10);
+// Final list of nearby places
+var placeObjects = await query.FindAsync();
+At this point placesObjects will be an IEnumerable<ParseObject> of PlaceObjects ordered by distance (nearest to farthest) from userGeoPoint.
+
+To limit the results using distance check out WhereWithinDistance,.
+
+It's also possible to query for the set of objects that are contained within a particular area. To find the objects in a rectangular bounding box, add the WhereWithinGeoBox restriction to your ParseQuery.
+
+var swOfSF = new ParseGeoPoint(37.708813, -122.526398);
+var neOfSF = new ParseGeoPoint(37.822802, -122.373962);
+var query = ParseObject.GetQuery("PizzaPlaceObject")
+    .WhereWithinGeoBox("location", swOfSF, neOfSF);
+var pizzaPlacesInSF = await query.FindAsync();
+Geo Distances
+
+Parse makes it easy to find the distance between two GeoPoints and query based upon that distance. For example, to get a distance in kilometers between two points, you can use the DistanceTo method:
+
+ParseGeoPoint p1 = /* Some location */;
+ParseGeoPoint p2 = /* Some other location */;
+double distanceInKm = p1.DistanceTo(p2).Kilometers;
+You can also query for ParseObjects within a radius using a ParseGeoDistance. For example, to find all places within 5 miles of a user, you would use the WhereWithinDistance method:
+
+ParseGeoPoint userGeoPoint = ParseUser.CurrentUser.Get<ParseGeoPoint>("location");
+ParseQuery<ParseObject> query = ParseObject.GetQuery("PlaceObject")
+    .WhereWithinDistance("location", userGeoPoint, ParseGeoDistance.FromMiles(5));
+IEnumerable<ParseObject> nearbyLocations = await query.FindAsync();
+// nearbyLocations contains PlaceObjects within 5 miles of the user's location
+Caveats
+
+At the moment there are a couple of things to watch out for:
+
+Each ParseObject class may only have one key with a ParseGeoPoint object.
+Points should not equal or exceed the extreme ends of the ranges. Latitude should not be -90.0 or 90.0. Longitude should not be -180.0 or 180.0. Attempting to set latitude or longitude out of bounds will cause an error.
+Error Handling
+
+Parse has a few simple patterns for surfacing errors and handling them in your code.
+
+There are two types of errors you may encounter. The first is those dealing with logic errors in the way you're using the SDK. These types of errors result in general Exception being raised. For an example take a look at the following code:
+
+var user = new ParseUser();
+await user.SignUpAsync();
+This will throw an InvalidOperationException because SignUpAsync was called without first setting the required properties (Username and Password).
+
+The second type of error is one that occurs when interacting with the Parse Cloud over the network. These errors are either related to problems connecting to the cloud or problems performing the requested operation. Let's take a look at another example:
+
+await ParseObject.GetQuery("Note").GetAsync("thisObjectIdDoesntExist");
+In the above code, we try to fetch an object with a non-existent ObjectId. The Parse Cloud will return an error -- so here's how to handle it properly:
+
+try
+{
+    await ParseObject.GetQuery("Note").GetAsync(someObjectId);
+    // Everything went fine!
+}
+catch (ParseException e)
+{
+    if (e.Code == ParseException.ErrorCode.ObjectNotFound)
+    {
+        // Uh oh, we couldn't find the object!
+    }
+    else
+    {
+        // Some other error occurred
+    }
+}
+By default, all connections have a timeout of 10 seconds, so tasks will not hang indefinitely.
+
+For a list of all possible ErrorCode types, see the ParseException.ErrorCode section of the Windows API.
+
+Security
+
+We strongly recommend that you build your applications to restrict access to data as much as possible. With this in mind, we recommend that you specify ACLs on all of your objects. Explicitly set public writability (and potentially public readability) on an object-by-object basis in order to protect your data from unauthorized access.
+
+Please keep secure access to your data in mind as you build your applications for the protection of both you and your users.

@@ -1,0 +1,364 @@
+What is Cloud Code?
+
+Parse's vision is to let developers build any mobile app without dealing with servers. For complex apps, sometimes you just need a bit of logic that isn't running on a mobile device. Cloud Code makes this possible.
+
+Cloud Code is easy to use because it's built on the same JavaScript SDK that powers thousands of apps. The only difference is that this code runs in the Parse Cloud rather than running on a mobile device. When you update your Cloud Code, it becomes available to all mobile environments instantly. You don't have to wait for a new release of your application. This lets you change app behavior on the fly and add new features faster.
+
+Even if you're only familiar with mobile development, we hope you'll find Cloud Code straightforward and easy to use.
+
+Getting Started
+
+On the computer you use for development, you will need to install Parse's command line tool. This will let you manage your code in the Parse Cloud.
+
+Installing the Command Line Tool (Mac/Linux)
+
+In Mac OS and Linux/Unix environments, you can get the parse tool by running this command:
+
+curl -s https://www.parse.com/downloads/cloud_code/installer.sh | sudo /bin/bash
+This installs a tool named "parse" to /usr/local/bin/parse. There's no other junk, so to uninstall, just delete that file.
+
+Installing the Command Line Tool (Windows)
+
+The Parse command line tool for Windows is available here. After installing the application, you can launch a parse-aware powershell session through the Start menu or by hitting Win + R and typing "parse".
+
+Setting Up Cloud Code
+
+The next step is to create a directory to store the code that you will run in the cloud. The command parse new sets up this directory, and will prompt you to pick which app you are creating Cloud Code for:
+
+$ parse new MyCloudCode
+Email: ninja@gmail.com
+Password:
+1:MyApp
+Select an App: 1
+$ cd MyCloudCode
+Use the email address and password for your Parse account to log in. If you signed up via OAuth and never set a password, you should now set one by editing your account settings. This will create a directory called MyCloudCode in the current directory. Several files are automatically created for you:
+
+-config/
+  global.json
+-cloud/
+  main.js
+Typically, you'll just be editing main.js. This file stores all of your Cloud Code. The json files contain configuration information that you shouldn't normally need to deal with. For now, just check that these files were created successfully. If you're using source control, you can check all of these files in.
+
+A Simple Function
+
+Following ancient tradition, let's see how to run the simplest possible function in the cloud. If you take a look at cloud/main.js, you'll see an example function that just returns a string:
+
+Parse.Cloud.define("hello", function(request, response) {
+  response.success("Hello world!");
+});
+To deploy the code from your machine to the Parse Cloud, run:
+
+$ parse deploy
+To run this function once it's deployed, run:
+
+  https://api.parse.com/1/functions/hello
+Show examples for:  Use keys for:  
+You should see this response:
+
+{
+  "result": "Hello world!"
+}
+Congratulations! You have successfully deployed and run Cloud Code.
+
+This is a good time to play around with the deployment cycle. Try changing "Hello world!" to a different string, then deploy and run the function again to get a different result. The whole JavaScript SDK is available in Cloud Code, so there's a lot you can do. We'll go over some examples in more detail below.
+
+Cloud Functions
+
+Let's look at a slightly more complex example where Cloud Code is useful. One reason to do computation in the cloud is so that you don't have to send a huge list of objects down to a device if you only want a little bit of information. For example, let's say you're writing an app that lets people review movies. A single Review object could look like:
+
+{
+  "movie": "The Matrix",
+  "stars": 5,
+  "comment": "Too bad they never made any sequels."
+}
+If you wanted to find the average number of stars for The Matrix, you could query for all of the reviews, and average the stars on the device. However, this uses a lot of bandwidth when you only need a single number. With Cloud Code, we can just pass up the name of the movie, and return the average star rating.
+
+Cloud functions accept a JSON parameters dictionary on the request object, so we can use that to pass up the movie name. The entire Parse JavaScript SDK is available in the cloud environment, so we can use that to query over Review objects. Together, the code to implement averageStars looks like:
+
+Parse.Cloud.define("averageStars", function(request, response) {
+  var query = new Parse.Query("Review");
+  query.equalTo("movie", request.params.movie);
+  query.find({
+    success: function(results) {
+      var sum = 0;
+      for (var i = 0; i < results.length; ++i) {
+        sum += results[i].get("stars");
+      }
+      response.success(sum / results.length);
+    },
+    error: function() {
+      response.error("movie lookup failed");
+    }
+  });
+});
+The only difference between using averageStars and hello is that we have to provide the parameter that will be accessed in request.params.movie:
+
+  https://api.parse.com/1/functions/averageStars
+Show examples for:  Use keys for:  
+In general, two arguments will be passed into cloud functions:
+
+request - The request object contains information about the request. The following fields are set:
+params - The parameters object sent to the function by the client.
+user - The Parse.User that is making the request. This will not be set if there was no logged-in user.
+response - The response object contains two functions:
+success - This function takes an optional parameter which is the data to send back to the client. This object can be any JSON object/array and can contain a Parse.Object.
+error - If called, signals that there was an error. It takes an optional parameter which will be passed to the client to provide a helpful error message.
+If the function is successful, the response in the client looks like:
+
+{
+  "result": 4.8
+}
+If there is an error, the response in the clientlooks like:
+
+{
+  "code": 141,
+  "error": "movie lookup failed"
+}
+Running Code When Objects Are Saved
+
+Another reason to run code in the cloud is to enforce a particular data format. For example, you might have both an Android and an iOS app, and you want to validate data for each of those. Rather than writing code once for each client environment, you can write it just once with Cloud Code.
+
+Validations
+
+Let's take a look at our movie review example. When you're choosing how many stars to give something, you can typically only give 1, 2, 3, 4, or 5 stars. You can't give -6 stars or 1337 stars in a review. If we want to reject reviews that are out of bounds, we can do this with the beforeSave method:
+
+Parse.Cloud.beforeSave("Review", function(request, response) {
+  if (request.object.get("stars") < 1) {
+    response.error("you cannot give less than one star");
+  } else if (request.object.get("stars") > 5) {
+    response.error("you cannot give more than five stars");
+  } else {
+    response.success();
+  }
+});
+If response.error is called, the Review object will not get saved, and the client will get an error. If response.success is called, the object will get saved normally. Your code should call one of these two callbacks.
+
+One useful tip is that even if your mobile app has many different versions, the same version of Cloud Code applies to all of them. Thus, if you launch an application that doesn't correctly check the validity of input data, you can still fix this problem by adding a validation with beforeSave.
+
+Modifying Objects On Save
+
+In some cases, you don't want to throw out invalid data. You just want to tweak it a bit before saving it. beforeSave can handle this case, too. You just call response.success on the altered object.
+
+In our movie review example, we might want to ensure that comments aren't too long. A single long comment might be tricky to display. We can use beforeSave to truncate the comment field to 140 characters:
+
+Parse.Cloud.beforeSave("Review", function(request, response) {
+  var comment = request.object.get("comment");
+  if (comment.length > 140) {
+    // Truncate and add a ...
+    request.object.set("comment", comment.substring(0, 137) + "...");
+  }
+  response.success();  
+});
+Performing Actions After a Save
+
+In some cases, you may want to perform some action, such as a push, after an object has been saved. You can do this with the afterSave method. Let's say you want to keep track of the number of comments on a blog post. you can do that by doing:
+
+Parse.Cloud.afterSave("Comment", function(request) {
+  query = new Parse.Query("Post");
+  query.get(request.object.post.id, {
+    success: function(post) {
+      post.increment('comments');
+      post.save();
+    },
+    error: function(error) {
+      throw "Got an error " + error.code + " : " + error.message;
+    }
+  });
+});
+If the afterSave function fails, the save still returns a successful response to the client. Any errors that occurred while running the afterSave function can be found in the parse log.
+
+Logging from Cloud Code
+
+If you want to log a message to the log files displayed by parse log, you can use console.log, console.error, or console.warn. Both console.error and console.warn will write to the error log.
+
+Parse.Cloud.define("Logger", function(request, response) {
+  console.log(request.params);
+  response.success();
+});
+Networking
+
+Cloud Code allows sending HTTP requests to any HTTP Server using Parse.Cloud.httpRequest. This function takes an options object to configure the call. A simple GET request would look like:
+
+Parse.Cloud.httpRequest({
+  url: 'http://www.parse.com/',
+  success: function(httpResponse) {
+    console.log(httpResponse.text);
+  },
+  error: function(httpResponse) {
+    console.error('Request failed with response code ' + httpResponse.status);
+  }
+});
+success will be called on a successful http status code, otherwise error will be called.
+
+Query Parameters
+
+You can specify query parameters to append to the end of the url by setting params on the options object. You can either pass a JSON object of key value pairs like:
+
+Parse.Cloud.httpRequest({
+  url: 'http://www.google.com/search',
+  params: {
+    q : 'Sean Plott'
+  },
+  success: function(httpResponse) {
+    console.log(httpResponse.text);
+  },
+  error: function(httpResponse) {
+    console.error('Request failed with response code ' + httpResponse.status);
+  }
+});
+or as a raw String like this:
+
+Parse.Cloud.httpRequest({
+  url: 'http://www.google.com/search',
+  params: 'q=Sean Plott',
+  success: function(httpResponse) {
+    console.log(httpResponse.text);
+  },
+  error: function(httpResponse) {
+    console.error('Request failed with response code ' + httpResponse.status);
+  }
+});
+Setting Headers
+
+You can send HTTP Headers by setting the header attribute of the options object. Let's say you want set the Content-Type of the request, you can do:
+
+Parse.Cloud.httpRequest({
+  url: 'http://www.example.com/',
+  headers: {
+    'Content-Type': 'application/json'
+  },
+  success: function(httpResponse) {
+    console.log(httpResponse.text);
+  },
+  error: function(httpResponse) {
+    console.error('Request failed with response code ' + httpResponse.status);
+  }
+});
+Sending a POST Request
+
+You can send a post request by setting the method attribute of the options object. The body of the POST can be set using the body. A simple example would be:
+
+Parse.Cloud.httpRequest({
+  method: 'POST',
+  url: 'http://www.example.com/create_post',
+  body: {
+    title: 'Vote for Pedro',
+    body: 'If you vote for Pedro, your wildest dreams will come true'
+  },
+  success: function(httpResponse) {
+    console.log(httpResponse.text);
+  },
+  error: function(httpResponse) {
+    console.error('Request failed with response code ' + httpResponse.status);
+  }
+});
+This will send a post to http://www.example.com/create_post with body that is the url form encoded body attribute. If you want the body to be JSON encoded, you can instead do:
+
+Parse.Cloud.httpRequest({
+  method: 'POST',
+  url: 'http://www.example.com/create_post',
+  headers: {
+    'Content-Type': 'application/json'
+  },
+  body: {
+    title: 'Vote for Pedro',
+    body: 'If you vote for Pedro, your wildest dreams will come true'
+  },
+  success: function(httpResponse) {
+    console.log(httpResponse.text);
+  },
+  error: function(httpResponse) {
+    console.error('Request failed with response code ' + httpResponse.status);
+  }
+});
+The body attribute can instead be a String which will be sent as is.
+
+The Response Object
+
+The response object passed into the success and error will contain:
+
+status - The HTTP Response status.
+headers - The response headers
+text - The raw response body.
+data - The parsed response, if Cloud Code knows how to parse the content-type that was sent.
+Modules
+
+Cloud Code supports breaking up JavaScript code into modules. In order to avoid unwanted side effects from loading modules, Cloud Code's modules work similarly to CommonJS modules. When a module is loaded, the JavaScript file is loaded, the source executed and the global exports object is returned. For example, if cloud/name.js has the following source:
+
+var coolNames = ['Ralph', 'Skippy', 'Chip', 'Ned', 'Scooter'];
+exports.isACoolName = function(name) {
+  return coolNames.indexOf(name) !== -1;
+}
+and cloud/main.js contains:
+
+var name = require('cloud/name.js');
+name.isACoolName('Fred'); // returns false
+name.isACoolName('Skippy'); // returns true;
+name.coolNames; // undefined.
+name contains a function called isACoolName. The path used by require is relative to the root directory of your Parse project. Only modules in the cloud/ directory can be loaded.
+
+Command Line Tool
+
+We've already seen how Parse's command line tool lets you deploy new code to the cloud. It has several other useful bits of functionality.
+
+Introduction
+
+The same code can be deployed to multiple different applications. This is useful so that you can have separate "development" and "production" applications. Then you test the code on a development application before launching it in production.
+
+The first application that is added (by the new command) will be the default application for all command line operations. All commands except for new take an optional application that the command will be performed on.
+
+Deploying
+
+To deploy a new release, run
+
+$ parse deploy
+New release is named v1
+This pushes the new code (in cloud/main.js) to the Parse Cloud and deploys this code for the default target which is the first app that was added. You can choose to deploy to a different target by adding the target as an argument to deploy like so:
+
+$ parse deploy "My Other App"
+New release is named v2
+You can add release notes to the deploy with the -d or --description= option
+
+Add a New Target
+
+You can add a new parse application as a target by running the add command. This prompts you for your Parse.com email and password and provides you a list of applications to choose from:
+
+$ parse add
+Email: pirate@gmail.com
+Password:
+1:PiecesOfEightCounter
+2:BootyDivider
+Select an App: 1
+The add command takes an optional argument which is an alias to assign to the application that can be used instead of the app name.
+
+Typically, all of this configuration data gets stored in the global.json. However, you might have an app that you use for development that you do not want to share with the rest of your team. You can use the --local flag to add this configuration instead to a separate local.json file. This way, you can check global.json into source control, while keeping local.json just on your own machine.
+
+Rolling Back
+
+You can roll back a release using parse rollback. Just like with parse deploy, you can specify an optional target argument.
+
+$ parse rollback
+Rolled back to v1
+This rollback to the previous version of the code. You can also specify the release name to rollback to by using the -r or --release= option.
+
+Reading the Logs
+
+Every deploy, rollback, and activation of Cloud Code is logged. You can retrieve the end of logs using the parse log command. There are two types of logs:
+
+INFO - contains everything.
+ERROR - contains only the errors.
+The log command takes an optional target as well as two options:
+
+-n - The number of log lines to display (defaults to 10)
+--level/-l - The log level to use (defaults to INFO)
+$ parse log -n 1
+I2012-07-10:13:37:00] beforeSave handler in release 'v1' ran for GameScore with the input:
+  {"original": null, "update":{"score": 1337}}
+ and failed validation with Each GamesScore must have a playerName
+Listing Releases
+
+You can list the known set of releases on the Parse Cloud with the releases command. Parse only tracks the last 20 releases.
+
+Setting the SDK version
+
+The default Parse JavaScript SDK version that is used for the Cloud Code in this directory is the latest version at the time the new command was run for this directory. If you want to change this, you can change the parseVersion in config/global.json.

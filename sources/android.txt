@@ -1,0 +1,1214 @@
+Android Guide
+
+If you haven't installed the SDK yet, please head over to the QuickStart guide to get our SDK up and running in Eclipse.
+
+Introduction
+
+The Parse platform provides a complete backend solution for your mobile application. Our goal is to totally eliminate the need for writing server code or maintaining servers.
+
+If you're familiar with web frameworks like Ruby on Rails, we've taken many of the same principles and applied them to our platform. In particular, our SDK is ready to use out of the box with minimal configuration on your part.
+
+Apps
+
+On Parse, you create an App for each of your mobile applications. Each App has its own application id and client key that you apply to your SDK install. Your account on Parse can accommodate multiple Apps. This is useful even if you have one application, since you can deploy different versions for test and production.
+
+Objects
+
+The ParseObject
+
+Storing data on Parse is built around the ParseObject. Each ParseObject contains key-value pairs of JSON-compatible data. This data is schemaless, which means that you don't need to specify ahead of time what keys exist on each ParseObject. You simply set whatever key-value pairs you want, and our backend will store it.
+
+For example, let's say you're tracking high scores for a game. A single ParseObject could contain:
+
+score: 1337, playerName: "Sean Plott", cheatMode: false
+Keys must be alphanumeric strings. Values can be strings, numbers, booleans, or even arrays and objects - anything that can be JSON-encoded.
+
+Each ParseObject has a class name that you can use to distinguish different sorts of data. For example, we could call the high score object a GameScore. We recommend that you NameYourClassesLikeThis and nameYourKeysLikeThis, just to keep your code looking pretty.
+
+Saving Objects
+
+Let's say you want to save the GameScore described above to the Parse Cloud. The interface is similar to a Map, plus the saveInBackground method:
+
+ParseObject gameScore = new ParseObject("GameScore");
+gameScore.put("score", 1337);
+gameScore.put("playerName", "Sean Plott");
+gameScore.put("cheatMode", false);
+gameScore.saveInBackground();
+After this code runs, you will probably be wondering if anything really happened. To make sure the data was saved, you can look at the Data Browser in your app on Parse. You should see something like this:
+
+objectId: "xWMyZ4YEGZ", score: 1337, playerName: "Sean Plott", cheatMode: false,
+createdAt:"2011-06-10T18:33:42Z", updatedAt:"2011-06-10T18:33:42Z"
+There are two things to note here. You didn't have to configure or set up a new Class called GameScore before running this code. Your Parse app lazily creates this Class for you when it first encounters it.
+
+There are also a few fields you don't need to specify that are provided as a convenience. objectId is a unique identifier for each saved object. createdAt and updatedAt represent the time that each object was created and last modified in the cloud. Each of these fields is filled in by Parse, so they don't exist on a ParseObject until a save operation has completed.
+
+Retrieving Objects
+
+Saving data to the cloud is fun, but it's even more fun to get that data out again. If you have the objectId, you can retrieve the whole ParseObject using a ParseQuery:
+
+ParseQuery query = new ParseQuery("GameScore");
+query.getInBackground("xWMyZ4YEGZ", new GetCallback() {
+  public void done(ParseObject object, ParseException e) {
+    if (e == null) {
+      // object will be your game score
+    } else {
+      // something went wrong
+    }
+  }
+});
+To get the values out of the ParseObject, there's a getX method for each data type:
+
+int score = gameScore.getInt("score");
+String playerName = gameScore.getString("playerName");
+boolean cheatMode = gameScore.getBoolean("cheatMode");
+If you don't know what type of data you're getting out, you can call get(key), but then you probably have to cast it right away anyways. In most situations you should use the typed accessors like getString.
+
+The three special values have their own accessors:
+
+String objectId = gameScore.getObjectId();
+Date updatedAt = gameScore.getUpdatedAt();
+Date createdAt = gameScore.getCreatedAt();
+If you need to refresh an object you already have with the latest data that is in the cloud, you can call the refreshInBackground method like so:
+
+myObject.refreshInBackground(new RefreshCallback() {
+  public void done(ParseObject object, ParseException e) {
+    if (e == null) {
+      // Success!
+    } else {
+      // Failure!
+    }
+  }
+});
+The code in the GetCallback will be run on the main thread.
+
+Saving Objects Offline
+
+Most save functions execute immediately, and inform your app when the save is complete. If you don't need to know when the save has finished, you can use saveEventually instead. The advantage is that if the user currently doesn't have a network connection, saveEventually will store the update on the device until a network connection is re-established. If your app is closed before the connection is back, Parse will try again the next time the app is opened. All calls to saveEventually (and deleteEventually) are executed in the order they are called, so it is safe to call saveEventually on an object multiple times.
+
+ParseObject gameScore = new ParseObject("GameScore");
+gameScore.put("score", 1337);
+gameScore.put("playerName", "Sean Plott");
+gameScore.put("cheatMode", false);
+gameScore.saveEventually();
+Updating Objects
+
+Updating an object is simple. Just set some new data on it and call one of the save methods. For example:
+
+// Create the object.
+final ParseObject gameScore = new ParseObject("GameScore");
+gameScore.put("score", 1337);
+gameScore.put("playerName", "Sean Plott");
+gameScore.put("cheatMode", false);
+gameScore.put("skills", Arrays.asList("pwnage", "flying"));
+gameScore.saveInBackground(new SaveCallback() {
+  public void done(ParseException e) {
+    // Now let's update it with some new data. In this case, only cheatMode and score
+    // will get sent to the Parse Cloud. playerName hasn't changed.
+    gameScore.put("score", 1338);
+    gameScore.put("cheatMode", true);
+    gameScore.saveInBackground();
+  }
+});
+Parse automatically figures out which data has changed so only "dirty" fields will be transmitted during a save. You don't need to worry about squashing data in the cloud that you didn't intend to update.
+
+Counters
+
+The above example contains a common use case. The "score" field is a counter that we'll need to continually update with the player's latest score. Using the above method works but it's cumbersome and can lead to problems if you have multiple clients trying to update the same counter.
+
+To help with storing counter-type data, Parse provides methods that atomically increment (or decrement) any number field. So, the same update can be rewritten as:
+
+gameScore.increment("score");
+gameScore.saveInBackground();
+You can also increment by any amount using increment(key, amount).
+
+Arrays
+
+To help with storing array data, there are three operations that can be used to atomically change an array field:
+
+add and addAll append the given objects to the end of an array field.
+addUnique and addAllUnique add only the given objects which aren't already contained in an array field to that field. The position of the insert is not guaranteed.
+removeAll removes all instances of the given objects from an array field.
+For example, we can add items to the set-like "skills" field like so:
+
+gameScore.addAllUnique("skills", Arrays.asList("flying", "kungfu"));
+gameScore.saveInBackground();
+Deleting Objects
+
+To delete an object from the Parse Cloud:
+
+myObject.deleteInBackground();
+If you want to run a callback when the delete is confirmed, you can provide a DeleteCallback to the deleteInBackground method. If you want to block the calling thread, you can use the delete method.
+
+You can delete a single field from an object with the remove method:
+
+// After this, the playerName field will be empty
+myObject.remove("playerName");
+ 
+// Saves the field deletion to the Parse Cloud
+myObject.saveInBackground();
+Relational Data
+
+Objects can have relationships with other objects. To model this behavior, any ParseObject can be used as a value in other ParseObjects. Internally, the Parse framework will store the referred-to object in just one place, to maintain consistency.
+
+For example, each Comment in a blogging app might correspond to one Post. To create a new Post with a single Comment, you could write:
+
+// Create the post
+ParseObject myPost = new ParseObject("Post");
+myPost.put("title", "I'm Hungry");
+myPost.put("content", "Where should we go for lunch?");
+ 
+// Create the comment
+ParseObject myComment = new ParseObject("Comment");
+myComment.put("content", "Let's do Sushirrito.");
+ 
+// Add a relation between the Post and Comment
+myComment.put("parent", myPost);
+ 
+// This will save both myPost and myComment
+myComment.saveInBackground();
+By default, when fetching an object, related ParseObjects are not fetched. These objects' values cannot be retrieved until they have been fetched like so:
+
+fetchedComment.getParseObject("post").fetchIfNeededInBackground(new GetCallback() {
+  public void done(ParseObject object, ParseException e) {
+    String title = post.getString("title");
+  }
+});
+You can also model a many-to-many relation using the ParseRelation object. This works similar to List, except that you don't need to download all the ParseObjects in a relation at once. This allows ParseRelation to scale to many more objects than the List approach. For example, a User may have many Posts that they might like. In this case, you can store the set of Posts that a User likes using getRelation. In order to add a post to the list, the code would look something like:
+
+ParseUser user = ParseUser.getCurrentUser();
+ParseRelation relation = user.getRelation("likes");
+relation.add(post);
+user.saveInBackground();
+You can remove a post from the ParseRelation with something like:
+
+relation.remove(post);
+By default, the list of objects in this relation are not downloaded. You can get the list of Posts by calling findInBackground on the ParseQuery returned by getQuery. The code would look like:
+
+relation.getQuery().findInBackground(new FindCallback() {
+    void done(List<ParseObject> results, ParseException e) {
+      if (e != null) {
+        // There was an error
+      } else {
+        // results have all the Posts the current user liked.
+      }
+    }
+});
+If you want only a subset of the Posts you can add extra constraints to the ParseQuery returned by getQuery. The code would look something like:
+
+ParseQuery query = relation.getQuery();
+// Add other query constraints.
+For more details on ParseQuery, please look at the query portion of this guide. A ParseRelation behaves similar to a List for querying purposes, so any queries you can do on lists of objects (other than include) you can do on ParseRelation.
+
+Data Types
+
+So far we've used values with type String, int, bool, and ParseObject. Parse also supports java.util.Date, byte[], and JSONObject.NULL.
+
+You can nest JSONObject and JSONArray objects to store more structured data within a single ParseObject.
+
+Some examples:
+
+int myNumber = 42;
+String myString = "the number is " + myNumber;
+Date myDate = new Date();
+ 
+JSONArray myArray = new JSONArray();
+myArray.put(myString);
+myArray.put(myNumber);
+ 
+JSONObject myObject = new JSONObject();
+myObject.put("number", myNumber);
+myObject.put("string", myString);
+ 
+byte[] myData = { 4, 8, 16, 32 };
+ 
+ParseObject bigObject = new ParseObject("BigObject");
+bigObject.put("myNumber", myNumber);
+bigObject.put("myString", myString);
+bigObject.put("myDate", myDate);
+bigObject.put("myData", myData);
+bigObject.put("myArray", myArray);
+bigObject.put("myObject", myObject);
+bigObject.put("myNull", JSONObject.NULL);
+bigObject.saveInBackground();
+We do not recommend storing large pieces of binary data like images or documents using byte[] fields on ParseObject. ParseObjectss should not exceed 128 kilobytes in size. To store more, we recommend you use ParseFile. See the guide section for more details.
+
+For more information about how Parse handles data, check out our documentation on Data & Security.
+
+Other Operations
+
+Parse provides a number of convenient operations on ParseObject to help you manage your data.
+
+Counters
+
+Many apps keep counter data -- whether it's to track game scores, gold coins, or even sheep. Parse provides an easy way to atomically update your counter data. For example:
+
+ParseObject player = new ParseObject("Player");
+player.put("goldCoins", 1);
+player.saveInBackground();
+ 
+// Later ..
+player.increment("goldCoins");
+player.saveInBackground();
+You can also increment by any amount using increment(key, .
+
+Queries
+
+Basic Queries
+
+In many cases, getInBackground isn't powerful enough to specify which objects you want to retrieve. The ParseQuery offers different ways to retrieve a list of objects rather than just a single object.
+
+The general pattern is to create a ParseQuery, put conditions on it, and then retrieve a List of matching ParseObjects using the findInBackground method with a FindCallback. For example, to retrieve scores with a particular playerName, use the whereEqualTo method to constrain the value for a key:
+
+ParseQuery query = new ParseQuery("GameScore");
+query.whereEqualTo("playerName", "Dan Stemkoski");
+query.findInBackground(new FindCallback() {
+    public void done(List<ParseObject> scoreList, ParseException e) {
+        if (e == null) {
+            Log.d("score", "Retrieved " + scoreList.size() + " scores");
+        } else {
+            Log.d("score", "Error: " + e.getMessage());
+        }
+    }
+});
+findInBackground works similarly to getInBackground in that it assures the network request is done on a background thread, and runs its callback in the main thread.
+
+Query Constraints
+
+There are several ways to put constraints on the objects found by a ParseQuery. You can filter out objects with a particular key-value pair with whereNotEqualTo:
+
+query.whereNotEqualTo("playerName", "Michael Yabuti");
+You can give multiple constraints, and objects will only be in the results if they match all of the constraints. In other words, it's like an AND of constraints.
+
+query.whereNotEqualTo("playerName", "Michael Yabuti");
+query.whereGreaterThan("playerAge", 18);
+You can limit the number of results with setLimit. By default, results are limited to 100, but anything from 1 to 1000 is a valid limit:
+
+query.setLimit(10); // limit to at most 10 results
+If you want exactly one result, a more convenient alternative may be to use getFirst or getFirstBackground instead of using find.
+
+ParseQuery query = new ParseQuery("GameScore");
+query.whereEqualTo("playerEmail", "dstemkoski@example.com");
+query.getFirstInBackground(new GetCallback() {
+  public void done(ParseObject* object, ParseException e) {
+    if (object == null) {
+      Log.d("score", "The getFirst request failed.");
+    } else {
+      Log.d("score", "Retrieved the object.");
+    }
+  }
+});
+You can skip the first results with setSkip. This can be useful for pagination:
+
+query.setSkip(10); // skip the first 10 results
+For sortable types like numbers and strings, you can control the order in which results are returned:
+
+// Sorts the results in ascending order by the score field
+query.orderByAscending("score");
+ 
+// Sorts the results in descending order by the score field
+query.orderByDescending("score");
+You can add more sort keys to the query as follows:
+
+// Sorts the results in ascending order by the score field if the previous sort keys are equal.
+query.addAscendingOrder("score");
+ 
+// Sorts the results in descending order by the score field if the previous sort keys are equal.
+query.addDescendingOrder("score");
+For sortable types, you can also use comparisons in queries:
+
+// Restricts to wins < 50
+query.whereLessThan("wins", 50);
+ 
+// Restricts to wins <= 50
+query.whereLessThanOrEqualTo("wins", 50);
+ 
+// Restricts to wins > 50
+query.whereGreaterThan("wins", 50);
+ 
+// Restricts to wins >= 50
+query.whereGreaterThanOrEqualTo("wins", 50);
+If you want to retrieve objects matching several different values, you can use whereContainedIn, providing a collection of acceptable values. This is often useful to replace multiple queries with a single query. For example, if you want to retrieve scores made by any player in a particular list:
+
+String[] names = {"Jonathan Walsh", "Dario Wunsch", "Shawn Simon"};
+query.whereContainedIn("playerName", Arrays.asList(names));
+If you want to retrieve objects that do not match any of several values you can use whereKey:notContainedIn:, providing an array of acceptable values. For example, if you want to retrieve scores from players besides those in a list:
+
+String[] names = {"Jonathan Walsh", "Dario Wunsch", "Shawn Simon"};
+query.whereNotContainedIn("playerName", Arrays.asList(names));
+If you want to retrieve objects that have a particular key set, you can use whereExists. Conversely, if you want to retrieve objects without a particular key set, you can use whereDoesNotExist.
+
+// Finds objects that have the score set
+query.whereExists("score");
+ 
+// Finds objects that don't have the score set
+query.whereDoesNotExist("score");
+You can use the whereMatchesKeyInQuery method to get objects where a key matches the value of a key in a set of objects resulting from another query. For example, if you have a class containing sports teams and you store a user's hometown in the user class, you can issue one query to find the list of users whose hometown teams have winning records. The query would look like:
+
+ParseQuery teamQuery = new ParseQuery("Team");
+teamQuery.whereGreaterThan("winPct", 0.5);
+ParseQuery userQuery = ParseUser.getQuery();
+userQuery.whereMatchesKeyInQuery("hometown", "city", teamQuery);
+userQuery.findInBackground(new FindCallback() {
+  void done(List<ParseObject> results, ParseException e) {
+    // results has the list of users with a hometown team with a winning record
+  }
+});
+Conversely, to get objects where a key does not match the value of a key in a set of objects resulting from another query, use whereDoesNotMatchKeyInQuery. For example, to find users whose hometown teams have losing records:
+
+ParseQuery losingUserQuery = ParseUser.getQuery();
+losingUserQuery.whereDoesNotMatchKeyInQuery("hometown", "city", teamQuery);
+losingUserQuery.findInBackground(new FindCallback() {
+  void done(List<ParseObject>results, ParseException e) {
+    // results has the list of users with a hometown team with a losing record
+  }
+});
+Queries on Array Values
+
+If a key contains an array value, you can search for objects where the key's array value contains 2 by:
+
+// Find objects where the array in arrayKey contains the number 2.
+    query.whereEqualTo("arrayKey", 2);
+Queries on String Values
+
+There are several ways you can search over values containing strings. For any regular expression, you can use whereMatches to retrieve only the values that match it:
+
+// Finds barbecue sauces that start with a capital letter and a digit.
+ParseQuery query = new ParseQuery("BarbecueSauce");
+query.whereMatches("name", "^[A-Z]\\d");
+ 
+query.findInBackground(new FindCallback() {
+  public void done(List<ParseObject> sauceList, ParseException e) {
+    // The sauces could have, for example, name = "A1 Steak Sauce"
+  }
+});
+Parse uses the Perl-compatible regular expression format. Since the regular expression string is escaped by Java before being interpreted by the regular expression engine, be sure that you replace backslashes for the regular expression with double backslashes.
+
+whereMatches has an overload which supports many standard PCRE modifier characters:
+i - Case insensitive search
+m - Search across multiple lines of input
+
+// Some people type "BBQ", others type "bbq". Consider them the same thing with the i modifier.
+// The m modifier helps us find sauces that call themselves "bbq sauce" after the first line of text.
+ParseQuery query = new ParseQuery("Sauce");
+query.whereMatches("description", "bbq", "im");
+ 
+query.findInBackground(new FindCallback() {
+  public void done(List<ParseObject> sauceList, ParseException e) {
+    // Sauces that call themselves a "bbq" sauce.
+  }
+});
+There are also several helper functions for standard string operations: substrings, prefixes, and suffixes. Use whereContains to restrict to string values containing a substring:
+
+// Finds barbecue sauces that contain the string "Extra Spicy!".
+ParseQuery query = new ParseQuery("BarbecueSauce");
+query.whereContains("name", "Extra Spicy!");
+Use whereStartsWith to restrict to string values that start with a particular string. Similar to a MySQL LIKE operator, this is indexed so it is efficient for large datasets:
+
+// Finds barbecue sauces that start with "Big Daddy's".
+ParseQuery query = new ParseQuery("BarbecueSauce");
+query.whereStartsWith("name", "Big Daddy's");
+Use whereEndsWith to restrict to string values that end with a particular string:
+
+// Finds barbecue sauces that end with "Original Recipe".
+ParseQuery query = new ParseQuery("BarbecueSauce");
+query.whereEndsWith("name", "Original Recipe");
+Relational Queries
+
+There are several ways to issue queries for relational data. If you want to retrieve objects where a field matches a particular ParseObject, you can use whereEqualTo just like for other data types. For example, if each Comment has a Post object in its post field, you can fetch comments for a particular Post:
+
+// Assume ParseObject myPost was previously created.
+ParseQuery query = new ParseQuery("Comment");
+query.whereEqualTo("post", myPost);
+ 
+query.findInBackground(new FindCallback() {
+  public void done(List<ParseObject> commentList, ParseException e) {
+    // commentList now has the comments for myPost
+  }
+});
+If you want to retrieve objects where a field contains a ParseObject that matches a different query, you can use whereMatchesQuery. Note that the default limit of 100 and maximum limit of 1000 apply to the inner query as well, so with large data sets you may need to construct queries carefully to get the desired behavior. In order to find comments for posts containing images, you can do:
+
+ParseQuery innerQuery = new ParseQuery("Post");
+innerQuery.whereExists("image");
+ParseQuery query = new ParseQuery("Comment");
+query.whereMatchesQuery("post", innerQuery);
+query.findInBackground(new FindCallback() {
+  public void done(List<ParseObject> commentList, ParseException e) {
+    // comments now contains the comments for posts with images.
+  }
+});
+If you want to retrieve objects where a field contains a ParseObject that does not match a different query, you can use whereDoesNotMatchQuery. In order to find comments for posts without images, you can do:
+
+ParseQuery innerQuery = new ParseQuery("Post");
+innerQuery.whereExists("image");
+ParseQuery query = new ParseQuery("Comment");
+query.whereDoesNotMatchQuery("post", innerQuery);
+query.findInBackground(new FindCallback() {
+  public void done(List<ParseObject> commentList, ParseException e) {
+    // comments now contains the comments for posts without images.
+  }
+});
+In some situations, you want to return multiple types of related objects in one query. You can do this with the include method. For example, let's say you are retrieving the last ten comments, and you want to retrieve their related posts at the same time:
+
+ParseQuery query = new ParseQuery("Comment");
+ 
+// Retrieve the most recent ones
+query.orderByDescending("createdAt");
+ 
+// Only retrieve the last ten
+query.setLimit(10);
+ 
+// Include the post data with each comment
+query.include("post");
+ 
+query.findInBackground(new FindCallback() {
+  public void done(List<ParseObject> commentList, ParseException e) {
+    // commentList now contains the last ten comments, and the "post"
+    // field has been populated. For example:
+    for (ParseObject comment : commentList) {
+      // This does not require a network access.
+      ParseObject post = comment.getParseObject("post");
+      Log.d("post", "retrieved a related post");
+    }
+  }
+});
+You can also do multi level includes using dot notation. If you wanted to include the post for a comment and the post's author as well you can do:
+
+query.include("post.author");
+You can issue a query with multiple fields included by calling include multiple times. This functionality also works with ParseQuery helpers like getFirst() and getInBackground().
+
+Caching Queries
+
+It's often useful to cache the result of a query on disk. This lets you show data when the user's device is offline, or when the app has just started and network requests have not yet had time to complete. Parse takes care of automatically flushing the cache when it takes up too much space.
+
+The default query behavior doesn't use the cache, but you can enable caching with setCachePolicy. For example, to try the network and then fall back to cached data if the network is not available:
+
+query.setCachePolicy(ParseQuery.CachePolicy.NETWORK_ELSE_CACHE);
+query.findInBackground(new FindCallback() {
+public void done(List<ParseObject> scoreList, ParseException e) {
+  if (e == null) {
+    // Results were successfully found, looking first on the
+    // network and then on disk.
+  } else {
+    // The network was inaccessible and we have no cached data
+    // for this query.
+  }
+});
+Parse provides several different cache policies:
+
+IGNORE_CACHE 
+The query does not load from the cache or save results to the cache. IGNORE_CACHE is the default cache policy.
+CACHE_ONLY 
+The query only loads from the cache, ignoring the network. If there are no cached results, that causes a ParseException.
+NETWORK_ONLY 
+The query does not load from the cache, but it will save results to the cache.
+CACHE_ELSE_NETWORK 
+The query first tries to load from the cache, but if that fails, it loads results from the network. If neither cache nor network succeed, there is a ParseException.
+NETWORK_ELSE_CACHE 
+The query first tries to load from the network, but if that fails, it loads results from the cache. If neither network nor cache succeed, there is a ParseException.
+CACHE_THEN_NETWORK 
+The query first loads from the cache, then loads from the network. In this case, the FindCallback will actually be called twice - first with the cached results, then with the network results. This cache policy can only be used asynchronously with findInBackground.
+If you need to control the cache's behavior, you can use methods provided in ParseQuery to interact with the cache. You can do the following operations on the cache:
+
+Check to see if there is a cached result for the query with:
+boolean isInCache = query.hasCachedResult();
+Remove any cached results for a query with:
+query.clearCachedResult();
+Remove cached results for all queries with:
+ParseQuery.clearAllCachedResults();
+Control the maximum age of a cached result with:
+query.setMaxCacheAge(TimeUnit.DAYS.toMillis(1));
+Query caching also works with ParseQuery helpers including getFirst() and getInBackground().
+
+Counting Objects
+
+If you just need to count how many objects match a query, but you do not need to retrieve all the objects that match, you can use count instead of find. For example, to count how many games have been played by a particular player:
+
+ParseQuery query = new ParseQuery("GameScore");
+query.whereEqualTo("playerName", "Sean Plott");
+query.countInBackground(new CountCallback() {
+  public void done(int count, ParseException e) {
+    if (e == null) {
+      // The count request succeeded. Log the count
+      Log.d("score", "Sean has played " + count + " games");
+    } else {
+      // The request failed
+    }
+  }
+});
+If you want to block the calling thread, you can also use the synchronous query.count() method.
+
+Compound Queries
+
+If you want to find objects that match one of several queries, you can use ParseQuery.or method to construct a query that is an or of the queries passed in. For instance if you want to find players who either have a lot of wins or a few wins, you can do:
+
+ParseQuery lotsOfWins = new ParseQuery("Player");
+lotsOfWins.whereGreaterThan(150);
+ 
+ParseQuery fewWins = new ParseQuery("Player");
+fewWins.whereLessThan(5);
+ 
+List<ParseQuery> queries = new ArrayList<ParseQuery>();
+queries.add(lotsOfWins);
+queries.add(fewWins);
+ 
+ParseQuery mainQuery = ParseQuery.or(queries);
+mainQuery.findInBackground(new FindCallback() {
+  public void done(List<ParseObject> results, ParseException e) {
+    // results has the list of players that win a lot or haven't won much.
+  }
+});
+You can also add more constraints to the newly constructed ParseQuery which act as an 'and' operator.
+
+Files
+
+The ParseFile
+
+ParseFile lets you store application files in the cloud that would otherwise be too large or cumbersome to fit into a regular ParseObject. The most common use case is storing images but you can also use it for documents, videos, music, and any other binary data (up to 10 megabytes).
+
+Getting started with ParseFile is easy. First, you'll need to have the data in byte[] form and then create a ParseFile with it. In this example, we'll just use a string:
+
+byte[] data = "Working at Parse is great!".getBytes();
+ParseFile file = new ParseFile("resume.txt", data);
+Notice in this example that we give the file a name of resume.txt. There's two things to note here:
+
+You don't need to worry about filename collisions. Each upload gets a unique identifier so there's no problem with uploading multiple files named resume.txt.
+It's important that you give a name to the file that has a file extension. This lets Parse figure out the file type and handle it accordingly. So, if you're storing PNG images, make sure your filename ends with .png.
+Next you'll want to save the file up to the cloud. As with ParseObject, there are many variants of the save method you can use depending on what sort of callback and error handling suits you.
+
+file.saveInBackground();
+Finally, after the save completes, you can associate a ParseFile onto a ParseObject just like any other piece of data:
+
+ParseObject jobApplication = new ParseObject("JobApplication");
+jobApplication.put("applicantName", "Joe Smith");
+jobApplication.put("applicantResumeFile", file);
+jobApplication.saveInBackground();
+Retrieving it back involves calling one of the getData variants on the ParseObject. Here we retrieve the resume file off another JobApplication object:
+
+ParseFile applicantResume = (ParseFile)anotherApplication.get("applicantResumeFile");
+applicantResume.getDataInBackground(new GetDataCallback() {
+  public void done(byte[] data, ParseException e) {
+    if (e == null) {
+      // data has the bytes for the resume
+    } else {
+      // something went wrong
+    }
+  }
+});
+Just like on ParseObject, you will most likely want to use the background version of getData.
+
+Progress
+
+It's easy to get the progress of both uploads and downloads using ParseFile by passing a ProgressCallback to saveInBackground and getDataInBackground. For example:
+
+byte[] data = "Working at Parse is great!".getBytes();
+ParseFile file = new ParseFile("resume.txt", data);
+ 
+file.saveInBackground(new SaveCallback() {
+  public void done(ParseException e) {
+    // Handle success or failure here ...
+  }
+}, new ProgressCallback() {
+  public void done(Integer percentDone) {
+    // Update your progress spinner here. percentDone will be between 0 and 100.
+  }
+});
+Push Notifications
+
+To learn more about push check out our Push Notification Guide!
+Users
+
+At the core of many apps, there is a notion of user accounts that lets users access their information in a secure manner. We provide a specialized user class called ParseUser that automatically handles much of the functionality required for user account management.
+
+With this class, you'll be able to add user account functionality in your app.
+
+ParseUser is a subclass of the ParseObject, and has all the same features, such as flexible schema, automatic persistence, and a key value interface. All the methods that are on ParseObject also exist in ParseUser. The difference is that ParseUser has some special additions specific to user accounts.
+
+Properties
+
+ParseUser has several properties that set it apart from ParseObject:
+
+username: The username for the user (required).
+password: The password for the user (required on signup).
+email: The email address for the user (optional).
+We'll go through each of these in detail as we run through the various use cases for users. Keep in mind that if you set username and email using the setters, you do not need to set it using the put method.
+
+Signing Up
+
+The first thing your app will do is probably ask the user to sign up. The following code illustrates a typical sign up:
+
+ParseUser user = new ParseUser();
+user.setUsername("my name");
+user.setPassword("my pass");
+user.setEmail("email@example.com");
+ 
+// other fields can be set just like with ParseObject
+user.put("phone", "650-253-0000");
+ 
+user.signUpInBackground(new SignUpCallback() {
+  public void done(ParseException e) {
+    if (e == null) {
+      // Hooray! Let them use the app now.
+    } else {
+      // Sign up didn't succeed. Look at the ParseException
+      // to figure out what went wrong
+    }
+  }
+});
+This call will asynchronously create a new user in your Parse App. Before it does this, it checks to make sure that both the username and email are unique. Also, it securely hashes the password in the cloud. We never store passwords in plaintext, nor will we ever transmit passwords back to the client in plaintext.
+
+Note that we used the signUpInBackground method, not the saveInBackground method. New ParseUsers should always be created using the signUpInBackground (or signUp) method. Subsequent updates to a user can be done by calling save.
+
+The signUpInBackground method comes in various flavors, with the ability to pass back errors, and also synchronous versions. As usual, we highly recommend using the asynchronous versions when possible, so as not to block the UI in your app. You can read more about these specific methods in our API docs.
+
+If a signup isn't successful, you should read the error object that is returned. The most likely case is that the username or email has already been taken by another user. You should clearly communicate this to your users, and ask them try a different username.
+
+You are free to use an email addresses as the username. Simply ask your users to enter their email, but fill it in the username property — ParseUser will work as normal. We'll go over how this is handled in the reset password section.
+
+Logging In
+
+Of course, after you allow users to sign up, you need be able to let them log in to their account in the future. To do this, you can use the class method logInInBackground.
+
+ParseUser.logInInBackground("Jerry", "showmethemoney", new LogInCallback() {
+  public void done(ParseUser user, ParseException e) {
+    if (user != null) {
+      // Hooray! The user is logged in.
+    } else {
+      // Signup failed. Look at the ParseException to see what happened.
+    }
+  }
+});
+Verifying Emails
+
+Enabling email verification in an application's settings allows the application to reserve part of its experience for users with confirmed email addresses. Email verification adds the emailVerified key to the ParseUser object. When a ParseUser's email is set or modified, emailVerified is set to false. Parse then emails the user a link which will set emailVerified to true.
+
+There are three emailVerified states to consider:
+
+true - the user confirmed his or her email address by clicking on the link Parse emailed them. ParseUsers can never have a true value when the user account is first created.
+false - at the time the ParseUser object was last refreshed, the user had not confirmed his or her email address. If emailVerified is false, consider calling refresh() on the ParseUser.
+missing - the ParseUser was created when email verification was off or the ParseUser does not have an email.
+Current User
+
+It would be bothersome if the user had to log in every time they open your app. You can avoid this by using the cached currentUser object.
+
+Whenever you use any signup or login methods, the user is cached on disk. You can treat this cache as a session, and automatically assume the user is logged in:
+
+ParseUser currentUser = ParseUser.getCurrentUser();
+if (currentUser != null) {
+  // do stuff with the user
+} else {
+  // show the signup or login screen
+}
+You can clear the current user by logging them out:
+
+ParseUser.logOut();
+ParseUser currentUser = ParseUser.getCurrentUser(); // this will now be null
+Anonymous Users
+
+Being able to associate data and objects with individual users is highly valuable, but sometimes you want to be able to do this without forcing a user to specify a username and password.
+
+An anonymous user is a user that can be created without a username and password but still has all of the same capabilities as any other ParseUser. After logging out, an anonymous user is abandoned, and its data is no longer accessible.
+
+You can create an anonymous user using ParseAnonymousUtils:
+
+ParseAnonymousUtils.logIn(new LogInCallback() {
+  @Override
+  public void done(ParseUser user, ParseException e) {
+    if (e != null) {
+      Log.d("MyApp", "Anonymous login failed.");
+    } else {
+      Log.d("MyApp", "Anonymous user logged in.");
+    }
+  }
+});
+You can convert an anonymous user into a regular user by setting the username and password, then calling signUp(), or by logging in or linking with a service like Facebook or Twitter. The converted user will retain all of its data. To determine whether the current user is an anonymous user, you can check ParseAnonymousUtils.isLinked():
+
+if (ParseAnonymousUtils.isLinked(ParseUser.getCurrentUser())) {
+  enableSignUpButton();
+} else {
+  enableLogOutButton();
+}
+Anonymous users can also be automatically created for you without requiring a network request, so that you can begin working with your user immediately when your application starts. When you enable automatic anonymous user creation at application startup, ParseUser.getCurrentUser() will never be null. The user will automatically be created in the cloud the first time the user or any object with a relation to the user is saved. Until that point, the user's object ID will be null. Enabling automatic user creation makes associating data with your users painless. For example, in your Application.onCreate() method, you might write:
+
+ParseUser.enableAutomaticUser();
+ParseUser.getCurrentUser().increment("RunCount");
+ParseUser.getCurrentUser().saveInBackground();
+Security For User Objects
+
+The ParseUser class is secured by default. Data stored in a ParseUser can only be modified by that user. By default, the data can still be read by any client. Thus, some ParseUser objects are authenticated and can be modified, whereas others are read-only.
+
+Specifically, you are not able to invoke any of the save or delete type methods unless the ParseUser was obtained using an authenticated method, like logIn or signUp. This ensures that only the user can alter their own data.
+
+The following illustrates this security policy:
+
+ParseUser user = ParseUser.logIn("my_username", "my_password");
+user.setUsername("my_new_username"); // attempt to change username
+user.saveInBackground(); // This succeeds, since the user was authenticated on the device
+ 
+// Get the user from a non-authenticated manner
+ParseQuery query = ParseUser.getQuery();
+query.getInBackground(user.getObjectId(), new GetCallback() {
+  public void done(ParseObject object, ParseException e) {
+    ParseUser userFromQuery = (ParseUser) object;
+    userFromQuery.setUsername("another_username");
+ 
+    // This will throw an exception, since the ParseUser is not authenticated
+    userFromQuery.saveInBackground();
+  }
+});
+The ParseUser obtained from getCurrentUser() will always be authenticated.
+
+If you need to check if a ParseUser is authenticated, you can invoke the isAuthenticated() method. You do not need to check isAuthenticated() with ParseUser objects that are obtained via an authenticated method.
+
+Security for Other Objects
+
+The same security model that applies to the ParseUser can be applied to other objects. For any object, you can specify which users are allowed to read the object, and which users are allowed to modify an object. To support this type of security, each object has an access control list, implemented by the ParseACL class.
+
+The simplest way to use a ParseACL is to specify that an object may only be read or written by a single user. To create such an object, there must first be a logged in ParseUser. Then, new ParseACL(user) generates a ParseACL that limits access to that user. An object's ACL is updated when the object is saved, like any other property. Thus, to create a private note that can only be accessed by the current user:
+
+ParseObject privateNote = new ParseObject("Note");
+privateNote.put("content", "This note is private!");
+privateNote.setACL(new ParseACL(ParseUser.getCurrentUser()));
+privateNote.saveInBackground();
+This note will then only be accessible to the current user, although it will be accessible to any device where that user is signed in. This functionality is useful for applications where you want to enable access to user data across multiple devices, like a personal todo list.
+
+Permissions can also be granted on a per-user basis. You can add permissions individually to a ParseACL using setReadAccess and setWriteAccess. For example, let's say you have a message that will be sent to a group of several users, where each of them have the rights to read and delete that message:
+
+ParseObject groupMessage = new ParseObject("Message");
+ParseACL groupACL = new ParseACL();
+     
+// userList is an Iterable<ParseUser> with the users we are sending this message to.
+for (ParseUser user : userList) {
+  groupACL.setReadAccess(user, true);
+  groupACL.setWriteAccess(user, true);  
+}
+ 
+groupMessage.setACL(groupACL);
+groupMessage.saveInBackground();
+You can also grant permissions to all users at once using setPublicReadAccess and setPublicWriteAccess. This allows patterns like posting comments on a message board. For example, to create a post that can only be edited by its author, but can be read by anyone:
+
+ParseObject publicPost = new ParseObject("Post");
+ParseACL postACL = new ParseACL(ParseUser.getCurrentUser());
+postACL.setPublicReadAccess(true);
+publicPost.setACL(postACL);
+publicPost.saveInBackground();
+To help ensure that your users' data is secure by default, you can set a default ACL to be applied to all newly-created ParseObjects:
+
+ParseACL.setDefaultACL(defaultACL, true);
+In the code above, the second parameter to setDefaultACL tells Parse to ensure that the default ACL assigned at the time of object creation allows read and write access to the current user at that time. Without this setting, you would need to reset the defaultACL every time a user logs in or out so that the current user would be granted access appropriately. With this setting, you can ignore changes to the current user until you explicitly need to grant different kinds of access.
+
+Default ACLs make it easy to create apps that follow common access patterns. An application like Twitter, for example, where user content is generally visible to the world, might set a default ACL such as:
+
+ParseACL defaultACL = new ParseACL();
+defaultACL.setPublicReadAccess(true);
+ParseACL.setDefaultACL(defaultACL, true);
+For an application like Dropbox, where a user's data is only accessible by the user itself unless explicit permission is given, you would provide a default ACL where only the current user is given access:
+
+ParseACL.setDefaultACL(new ParseACL(), true);
+An application that logs data to Parse but doesn't provide any user access to that data would instead deny access to the current user while providing a restrictive ACL:
+
+ParseACL.setDefaultACL(new ParseACL(), false);
+Operations that are forbidden, such as deleting an object that you do not have write access to, result in a ParseException.OBJECT_NOT_FOUND error code. For security purposes, this prevents clients from distinguishing which object ids exist but are secured, versus which object ids do not exist at all.
+
+Resetting Passwords
+
+It's a fact that as soon as you introduce passwords into a system, users will forget them. In such cases, our library provides a way to let them securely reset their password.
+
+To kick off the password reset flow, ask the user for their email address, and call:
+
+ParseUser.requestPasswordResetInBackground("myemail@example.com",
+                                           new RequestPasswordResetCallback() {
+  public void done(ParseException e) {
+    if (e == null) {
+      // An email was successfully sent with reset instructions.
+    } else {
+      // Something went wrong. Look at the ParseException to see what's up.
+    }
+  }
+});
+This will attempt to match the given email with the user's email or username field, and will send them a password reset email. By doing this, you can opt to have users use their email as their username, or you can collect it separately and store it in the email field.
+
+The flow for password reset is as follows:
+
+User requests that their password be reset by typing in their email.
+Parse sends an email to their address, with a special password reset link.
+User clicks on the reset link, and is directed to a special Parse page that will allow them type in a new password.
+User types in a new password. Their password has now been reset to a value they specify.
+Note that the messaging in this flow will reference your app by the name that you specified when you created this app on Parse.
+
+Querying
+
+To query for users, you need to use the special user query:
+
+ParseQuery query = ParseUser.getQuery();
+query.whereEqualTo("gender", "female");
+query.findInBackground(new FindCallback() {
+  public void done(List<ParseObject> objects, ParseException e) {
+    if (e == null) {
+        // The query was successful.
+    } else {
+        // Something went wrong.
+    }
+  }
+});
+In addition, you can use get to get a ParseUser by id.
+
+Associations
+
+Associations involving a ParseUser work right of the box. For example, let's say you're making a blogging app. To store a new post for a user and retrieve all their posts:
+
+ParseUser user = ParseUser.getCurrentUser();
+ 
+// Make a new post
+ParseObject post = new ParseObject("Post");
+post.put("title", "My New Post");
+post.put("body", "This is some great content.");
+post.put("user", user);
+post.saveInBackground();
+ 
+// Find all posts by the current user
+ParseQuery query = new ParseQuery("Post");
+query.whereEqualTo("user", user);
+query.findInBackground(new FindCallback() { ... });
+Users in the Data Browser
+
+The User class is a special class that is dedicated to storing ParseUser objects. In the data browser, you'll see a little person icon next to the User class:
+
+
+
+Roles
+
+As your app grows in scope and user-base, you may find yourself needing more coarse-grained control over access to pieces of your data than user-linked ACLs can provide. To address this requirement, Parse supports a form of Role-based Access Control. Roles provide a logical way of grouping users with common access privileges to your Parse data. Roles are named objects that contain users and other roles. Any permission granted to a role is implicitly granted to its users as well as to the users of any roles that it contains.
+
+For example, in your application with curated content, you may have a number of users that are considered "Moderators" and can modify and delete content created by other users. You may also have a set of users that are "Administrators" and are allowed all of the same privileges as Moderators, but can also modify the global settings for the application. By adding users to these roles, you can ensure that new users can be made moderators or administrators, without having to manually grant permission to every resource for each user.
+
+We provide a specialized class called ParseRole that represents these role objects in your client code. ParseRole is a subclass of ParseObject, and has all of the same features, such as a flexible schema, automatic persistence, and a key value interface. All the methods that are on ParseObject also exist on ParseRole. The difference is that ParseRole has some additions specific to management of roles.
+
+Properties
+
+ParseRole has several properties that set it apart from ParseObject:
+
+name: The name for the role. This value is required, and can only be set once as a role is being created. The name must consist of alphanumeric characters, spaces, -, or _. This name will be used to identify the Role without needing its objectId.
+users: A relation to the set of users that will inherit permissions granted to the containing role.
+roles: A relation to the set of roles whose users and roles will inherit permissions granted to the containing role.
+Security for Role Objects
+
+The ParseRole uses the same security scheme (ACLs) as all other objects on Parse, except that it requires an ACL to be set explicitly. Generally, only users with greatly elevated privileges (e.g. a master user or Administrator) should be able to create or modify a Role, so you should define its ACLs accordingly. Remember, if you give write-access to a ParseRole to a user, that user can add other users to the role, or even delete the role altogether.
+
+To create a new ParseRole, you would write:
+
+// By specifying no write privileges for the ACL, we can ensure the role cannot be altered.
+ParseACL roleACL = new ParseACL();
+roleACL.setPublicReadAccess(true);
+ParseRole role = new ParseRole("Administrator", roleACL);
+role.saveInBackground();
+You can add users and roles that should inherit your new role's permissions through the "users" and "roles" relations on ParseRole:
+
+ParseRole role = new ParseRole(roleName, roleACL);
+for (ParseUser user : usersToAddToRole) {
+  role.getUsers().add(user)
+}
+for (ParseRole childRole : rolesToAddToRole) {
+  role.getRoles().add(childRole);
+}
+role.saveInBackground();
+Take great care when assigning ACLs to your roles so that they can only be modified by those who should have permissions to modify them.
+
+Security for Other Objects
+
+Now that you have created a set of roles for use in your application, you can use them with ACLs to define the privileges that their users will receive. Each ParseObject can specify a ParseACL, which provides an access control list that indicates which users and roles should be granted read or write access to the object.
+
+Giving a role read or write permission to an object is straightforward. You can either use the ParseRole:
+
+ParseRole moderators = /* Query for some ParseRole */;
+ParseObject wallPost = new ParseObject("WallPost");
+ParseACL postACL = new ParseACL();
+postACL.setRoleWriteAccess(moderators);
+wallPost.setACL(postACL);
+wallPost.saveInBackground();
+You can avoid querying for a role by specifying its name for the ACL:
+
+ParseObject wallPost = new ParseObject("WallPost");
+ParseACL postACL = new ParseACL();
+postACL.setRoleWriteAccess("Moderators", true);
+wallPost.setACL(postACL);
+wallPost.save();
+Role-based ParseACLs can also be used when specifying default ACLs for your application, making it easy to protect your users' data while granting access to users with additional privileges. For example, a moderated forum application might specify a default ACL like this:
+
+ParseACL defaultACL = new ParseACL();
+// Everybody can read objects created by this user
+defaultACL.setPublicReadAccess(true);
+// Moderators can also modify these objects
+defaultACL.setRoleWriteAccess("Moderators");
+// And the user can read and modify its own objects
+ParseACL.setDefaultACL(defaultACL, true);
+Role Hierarchy
+
+As described above, one role can contain another, establishing a parent-child relationship between the two roles. The consequence of this relationship is that any permission granted to the parent role is implicitly granted to all of its child roles.
+
+These types of relationships are commonly found in applications with user-managed content, such as forums. Some small subset of users are "Administrators", with the highest level of access to tweaking the application's settings, creating new forums, setting global messages, and so on. Another set of users are "Moderators", who are responsible for ensuring that the content created by users remains appropriate. Any user with Administrator privileges should also be granted the permissions of any Moderator. To establish this relationship, you would make your "Administrators" role a child role of "Moderators", like this:
+
+ParseRole administrators = /* Your "Administrators" role */;
+ParseRole moderators = /* Your "Moderators" role */;
+moderators.getRoles().add(administrators);
+moderators.saveInBackground();
+Role Quotas
+
+Role-based access control is a premium feature of the Parse platform. If you are on the "Basic" plan are limited to 1 custom role, which you can use to protect access for most basic applications that need broader security groups. Parse will not allow you to exceed this quota by accident, preventing you from creating new Roles until you upgrade your plan.
+
+If your current plan is "Pro" or above, you will have an allotment of roles included with your package, and creating Roles exceeding this quota will result in additional charges.
+
+For more information, please see our Plans page.
+
+Facebook Users
+
+Parse provides an easy way to integrate Facebook with your application. The Facebook SDK is included with our SDK, and is integrates with the ParseUser class to make linking your users to their Facebook identities easy.
+
+Using our Facebook integration, you can associate an authenticated Facebook user with a ParseUser. With just a few lines of code, you'll be able to provide a "log in with Facebook" option in your app, and be able to save their data to Parse.
+
+Setup
+
+To start using Facebook with Parse, you need to:
+
+Set up a Facebook app, if you haven't already.
+Add your application's Facebook Application ID on your Parse application's settings page.
+Add the following where you initialize the Parse SDK in your Application.onCreate()
+ParseFacebookUtils.initialize("YOUR FACEBOOK APP ID");
+If you encounter any issues that are Facebook-related, a good resource is the official getting started guide from Facebook.
+
+Note that if you already have the Facebook SDK installed in your app, our version of the Facebook SDK will happily work alongside it. Read more about the compatibility issues.
+
+There are two main ways to use Facebook with your Parse users: (1) logging in as a Facebook user and creating a ParseUser, or (2) linking Facebook to an existing ParseUser.
+
+Login & Signup
+
+ParseFacebookUtils provides a way to allow your ParseUsers to log in or sign up through Facebook. This is accomplished using the logIn() method:
+
+ParseFacebookUtils.logIn(this, new LogInCallback() {
+  @Override
+  public void done(ParseUser user, ParseException err) {
+    if (user == null) {
+      Log.d("MyApp", "Uh oh. The user cancelled the Facebook login.");
+    } else if (user.isNew()) {
+      Log.d("MyApp", "User signed up and logged in through Facebook!");
+    } else {
+      Log.d("MyApp", "User logged in through Facebook!");
+    }
+  }
+});
+When this code is run, the following happens:
+
+The user is shown the Facebook login dialog.
+The user authenticates via Facebook, and your app receives a callback.
+Our SDK receives the Facebook data and saves it to a ParseUser. If it's a new user based on the Facebook ID, then that user is created.
+Your LogInCallback is called with the user.
+In order to display the Facebook login dialogs and activities, the current Activity must be provided (often, the current activity is this when calling logIn() from within the Activity) as we have done above.
+
+You may optionally provide a collection of strings that specifies what permissions your app requires from the Facebook user. You may specify these strings yourself, or use the constants we've provided for you in the ParseFacebookUtils.Permissions class. For example:
+
+ParseFacebookUtils.logIn(Arrays.asList("create_event", Permissions.Extended.OFFLINE_ACCESS),
+        this, new LogInCallback() {
+  @Override
+  public void done(ParseUser user, ParseException err) {
+    // Code to handle login.
+  }
+});
+ParseUser integration doesn't require any permissions to work out of the box (ie. null or specifying no permissions is perfectly acceptable). Read more about permissions on Facebook's developer guide.
+
+It is up to you to record any data that you need from the Facebook user after they authenticate. To accomplish this, you'll need to do a graph query via Facebook's SDK.
+Linking
+
+If you want to associate an existing ParseUser to a Facebook account, you can link it like so:
+
+if (!ParseFacebookUtils.isLinked(user)) {
+  ParseFacebookUtils.link(user, this, new SaveCallback() {
+    @Override
+    public void done(ParseException ex) {
+      if (ParseFacebookUtils.isLinked(user)) {
+        Log.d("MyApp", "Woohoo, user logged in with Facebook!");
+      }
+    }
+  });
+}
+The steps that happen when linking are very similar to log in. The difference is that on successful login, the existing ParseUser is updated with the Facebook information. Future logins via Facebook will now log the user into their existing account.
+
+If you want to unlink Facebook from a user, simply do this:
+
+ParseFacebookUtils.unlinkInBackground(user, new SaveCallback() {
+  @Override
+  public void done(ParseException ex) {
+    if (ex == null) {
+      Log.d("MyApp", "The user is no longer associated with their Facebook account.");
+    }
+  }
+});
+Or if you are handling threading yourself, you can call unlink() directly like this:
+
+try {
+  ParseFacebookUtils.unlink(user);
+  Log.d("MyApp", "The user is no longer associated with their Facebook account.");
+} catch (ParseException e) {
+}
+Enabling Single Sign-on
+
+Facebook's Android SDK provides an enhanced login experience on devices that have Facebook's official Android app installed. This allows users of apps that support Facebook login to sign in directly through the Facebook app, using credentials that are already on the device. If the Facebook app is not installed, the default dialog-based authentication will be used. Facebook calls this feature "Single sign-on," and it can be enabled in the Parse SDK by making the following modifications to your code:
+
+Enable single sign-on in your ParseFacebookUtils.initialize() call.
+ParseFacebookUtils.initialize("YOUR FACEBOOK APP ID", true);
+Override onActivityResult() in your calling Activity to invoke finishAuthentication().
+@Override
+protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+  super.onActivityResult(requestCode, resultCode, data);
+  ParseFacebookUtils.finishAuthentication(requestCode, resultCode, data);
+}
+If your Activity is already using onActivityResult(), you can avoid requestCode collisions by calling the versions of link() and logIn() that take an activityCode parameter and specifying a code you know to be unique. Otherwise, a sensible default activityCode will be used.
+
+Facebook SDK and Parse
+
+The Facebook Android SDK provides a main Facebook object that is the starting point for many of the interactions with Facebook's API. You can read more about their SDK here.
+
+The Parse SDK includes the entire Facebook SDK. All the classes are in the com.parse.facebook package to avoid conflicts with existing libraries. So, for example, the main Facebook object class in our SDK is com.parse.facebook.Facebook.
+
+Our library also manages the Facebook object for you. You can simply call ParseFacebookUtils.getFacebook() to access the singleton instance.
+
+The Facebook singleton is synchronized with the current user by default, so any methods you call on it will be acting on the Facebook user associated with the current ParseUser. Modifying the singleton (by calling any of the set_____() methods) will cause the SDK to fall out of sync with the singleton, and is not recommended.
+
+Compatibility
+
+Even if you already have the Facebook SDK in your project, there should not be any conflicts because our version is located in the com.parse.facebook package. However, we recommend that you alter all references in your application to use our version and remove your version of the Facebook SDK in order to avoid unnecessary duplication and naming collisions.
+
+Twitter Users
+
+As with Facebook, Parse also provides an easy way to integrate Twitter authentication into your application. The Parse SDK provides a straightforward way to authorize and link a Twitter account to your ParseUsers. With just a few lines of code, you'll be able to provide a "log in with Twitter" option in your app, and be able to save their data to Parse.
+
+Setup
+
+To start using Twitter with Parse, you need to:
+
+Set up a Twitter app, if you haven't already.
+Add your application's Twitter consumer key on your Parse application's settings page.
+When asked to specify a "Callback URL" for your Twitter app, please insert a valid URL. This value will not be used by your iOS or Android application, but is necessary in order to enable authentication through Twitter.
+Add the following where you initialize the Parse SDK in your Application.onCreate()
+ParseTwitterUtils.initialize("YOUR CONSUMER KEY", "YOUR CONSUMER SECRET");
+If you encounter any issues that are Twitter-related, a good resource is the official Twitter documentation.
+
+There are two main ways to use Twitter with your Parse users: (1) logging in as a Twitter user and creating a ParseUser, or (2) linking Twitter to an existing ParseUser.
+
+Login & Signup
+
+ParseTwitterUtils provides a way to allow your ParseUsers to log in or sign up through Twitter. This is accomplished using the logIn() method:
+
+ParseTwitterUtils.logIn(this, new LogInCallback() {
+  @Override
+  public void done(ParseUser user, ParseException err) {
+    if (user == null) {
+      Log.d("MyApp", "Uh oh. The user cancelled the Twitter login.");
+    } else if (user.isNew()) {
+      Log.d("MyApp", "User signed up and logged in through Twitter!");
+    } else {
+      Log.d("MyApp", "User logged in through Twitter!");
+    }
+  }
+});
+When this code is run, the following happens:
+
+The user is shown the Twitter login dialog.
+The user authenticates via Twitter, and your app receives a callback.
+Our SDK receives the Twitter data and saves it to a ParseUser. If it's a new user based on the Twitter handle, then that user is created.
+Your LogInCallback is called with the user.
+In order to display the Twitter login dialogs and activities, the current Context must be provided (often, the current context is this when calling logIn() from within the Activity) as we have done above.
+
+Linking
+
+If you want to associate an existing ParseUser with a Twitter account, you can link it like so:
+
+if (!ParseTwitterUtils.isLinked(user)) {
+  ParseTwitterUtils.link(user, this, new SaveCallback() {
+    @Override
+    public void done(ParseException ex) {
+      if (ParseTwitterUtils.isLinked(user)) {
+        Log.d("MyApp", "Woohoo, user logged in with Twitter!");
+      }
+    }
+  });
+}
+The steps that happen when linking are very similar to log in. The difference is that on successful login, the existing ParseUser is updated with the Twitter information. Future logins via Twitter will now log the user into their existing account.
+
+If you want to unlink Twitter from a user, simply do this:
+
+ParseTwitterUtils.unlinkInBackground(user, new SaveCallback() {
+  @Override
+  public void done(ParseException ex) {
+    if (ex == null) {
+      Log.d("MyApp", "The user is no longer associated with their Twitter account.");
+    }
+  }
+});
+Twitter API Calls
+
+Our SDK provides a straightforward way to sign your API HTTP requests to the Twitter REST API when your app has a Twitter-linked ParseUser. To make a request through our API, you can use the Twitter singleton provided by ParseTwitterUtils:
+
+HttpClient client = new DefaultHttpClient();
+HttpGet verifyGet = new HttpGet(
+        "https://api.twitter.com/1/account/verify_credentials.json");
+ParseTwitterUtils.getTwitter().signRequest(verifyGet);
+HttpResponse response = client.execute(verifyGet);
+GeoPoints
+
+Parse allows you to associate real-world latitude and longitude coordinates with an object. Adding a ParseGeoPoint to a ParseObject allows queries to take into account the proximity of an object to a reference point. This allows you to easily do things like find out what user is closest to another user or which places are closest to a user.
+
+ParseGeoPoint
+
+To associate a point with an object you first need to create a ParseGeoPoint. For example, to create a point with latitude of 40.0 degrees and -30.0 degrees longitude:
+
+ParseGeoPoint point = new ParseGeoPoint(40.0, -30.0);
+This point is then stored in the object as a regular field.
+
+placeObject.put("location", point);
+Geo Queries
+
+Now that you have a bunch of objects with spatial coordinates, it would be nice to find out which objects are closest to a point. This can be done by adding another restriction to ParseQuery using whereNear. Getting a list of ten places that are closest to a user may look something like:
+
+ParseGeoPoint userLocation = (ParseGeoPoint) userObject.get("location");
+ParseQuery query = new ParseQuery("PlaceObject");
+query.whereNear("location", userLocation);
+query.setLimit(10);
+query.findInBackground(new FindCallback() { ... });
+At this point nearPlaces will be an array of objects ordered by distance (nearest to farthest) from userLocation.
+
+To limit the results using distance, check out whereWithinKilometers, whereWithinMiles, and whereWithinRadians.
+
+It's also possible to query for the set of objects that are contained within a particular area. To find the objects in a rectangular bounding box, add the whereWithinGeoBox restriction to your ParseQuery.
+
+ParseGeoPoint southwestOfSF = new ParseGeoPoint(37.708813, -122.526398);
+ParseGeoPoint northeastOfSF = new ParseGeoPoint(37.822802, -122.373962);
+ParseQuery query = new ParseQuery("PizzaPlaceObject");
+query.whereWithinGeoBox("location", southwestOfSF, northeastOfSF);
+query.findInBackground(new FindCallback() { ... });
+Caveats
+
+At the moment there are a couple of things to watch out for:
+
+Each ParseObject class may only have one key with a ParseGeoPoint object.
+Points should not equal or exceed the extreme ends of the ranges. Latitude should not be -90.0 or 90.0. Longitude should not be -180.0 or 180.0. Attempting to set latitude or longitude out of bounds will cause an error.
+Handling Errors
+
+Many of the methods on ParseObject, including save(), delete(), and get() will throw a ParseException on an invalid request, such as deleting or editing an object that no longer exists in the cloud, or when there is a network failure preventing communication with the Parse Cloud. You will need to catch and deal with these exceptions.
+
+For more details, look at the Android API.
+
+Security
+
+We strongly recommend that you build your applications to restrict access to data as much as possible. With this in mind, we recommend that you enable automatic anonymous user creation and specify a default ACL based upon the current user when your application is initialized. Explicitly set public writability (and potentially public readability) on an object-by-object basis in order to protect your data from unauthorized access.
+
+Consider adding the following code to your application startup:
+
+ParseUser.enableAutomaticUser();
+ParseACL defaultACL = new ParseACL();
+// Optionally enable public read access while disabling public write access.
+// defaultACL.setPublicReadAccess(true);
+ParseACL.setDefaultACL(defaultACL, true);
+Please keep secure access to your data in mind as you build your applications for the protection of both you and your users.
+
+Settings
+
+In addition to coding securely, please review the settings pages for your applications to select options that will restrict access to your applications as much as is appropriate for your needs. For example, if users should be unable to log in without a Facebook account linked to their application, disable all other login mechanisms. Specify your Facebook application IDs, Twitter consumer keys, and other such information to enable server-side validation of your users' login attempts.

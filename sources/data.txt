@@ -1,0 +1,88 @@
+Data & Security
+
+Data
+
+Valid Data Types
+
+We've designed the Parse SDKs so that you typically don't need to worry about how data is saved while using the iOS or Android SDKs. Simply add data to the PFObject or ParseObject, and it'll be saved correctly.
+
+Nevertheless, there are some cases where it's useful to be aware of how data is stored on the Parse platform.
+
+Internally, Parse stores data as JSON, so any datatype that can be converted to JSON can be stored on Parse. The framework can also handle Date, Bytes, and File types. Overall, the following types are allowed for each field in your object:
+
+String
+Number
+Boolean
+Array
+Object
+Date
+Bytes
+File
+Null
+The type Object simply denotes that each value can be composed of nested objects that are JSON-encodable. Keys including the characters $ or ., along with the key __type key, are reserved for the framework to handle additional types, so don't use those yourself.
+
+Our SDK handles translating native Objective-C and Java types to JSON. For example, if you save an NSString object, it will be translated into a String type in our system.
+
+There are two ways to store binary data. The Bytes type allows you to associate NSData/bytes[] types directly on a PFObject. This is recommended only for small pieces of binary-encoded data. For actual files (images, documents, etc.), the File type can be used by instantiating a PFFile/ParseFile and setting it on a field.
+
+Data Type Lock-in
+
+When a class is initially created, it doesn't have an inherent schema defined. This means that for the first object, it could have any types of fields you want.
+
+However, after a field has been set at least once, that field is locked into the particular type that was saved. For example, if a User object is saved with field name of type String, that field will be restricted to the String type only (our SDK will return an error if you try to save anything else).
+
+One special case is that any field can be set to null, no matter what type it is.
+
+The Data Browser
+
+The Data Browser is the web UI where you can update and create objects in each of your apps. Here, you can see the raw JSON values that are saved that represents each object in your class.
+
+When using the interface, keep in mind the following:
+
+Entering "null" will set the value to the special null value, not the string "null".
+The objectId, createdAt, updatedAt fields cannot be edited (these are set automatically).
+The value "(empty)" denotes that the field has not been set for that particular object (this is different than null).
+Importing Data
+
+In addition to the REST api, we also offer data import through CSV files.
+
+To create a new class with data from a CSV file, go to the Data Browser and click the "Import" button on the left hand column.
+
+Security
+
+For any mobile application, since the client code runs on a mobile device, it's possible that an untrustworthy client could edit that code and issue malicious requests. Choosing the right way to secure your application is important, but the right way to do it depends on your application and the types of data it stores.
+
+Parse offers several ways to use permissions to enforce security. If you have questions around how best to secure your application, we encourage you to contact feedback@parse.com.
+
+Object-Level Permissions
+
+The most flexible way to secure application data is through access control lists, commonly known as ACLs. The idea behind an ACL is that each object has a list of users and roles along with what permissions that user or role has. A user needs read permissions (or must belong to a role that has read permissions) in order to retrieve an object's data, and a user needs write permissions (or must belong to a role that has write permissions) in order to update or delete that object.
+
+Most applications can enforce their access patterns through ACLs. For example:
+
+For private data, "read" and "write" access can be restricted to the owner.
+For a post on a message board, the author and members of the "Moderators" role can have "write" access, and the general public can have "read" access.
+For logging data that will only be accessed by the developer through the REST API, the ACL can deny all permissions.
+Data created by a privileged group of users or the developer, like a global message of the day, can have public "read" access but restrict "write" access to an "Administrators" role.
+A message sent from one user to another can give "read" and "write" access just to those users.
+Using the Parse SDKs, you can set a default ACL for all of the objects your application clients creates. If you also enable automatic anonymous user creation for your application, you can ensure that your data has ACLs restricted to individual users by default. See the iOS and Android guides for more information about choosing secure defaults.
+
+All operations are still possible when authenticating with the master key via the REST API. As a developer, this lets you manage any aspect of the data. For example, you can delete private messages via the REST API even if they are private based on the ACL.
+
+For code examples on how to use ACLs, see the ACL section of the iOS Guide and the ACL section of the Android Guide.
+
+Class-Level Permissions
+
+For some situations, it is more natural to specify for an entire class which permissions are allowed. For example, you might want an entire class to be read-only, or write-only.
+
+To make this easier, Parse lets you specify what operations are allowed per class. To access these settings, go to the Data Browser, select a class, and click the "Settings" button on the right hand side.
+
+You can disable the client's ability to perform each of the following operations for the selected class:
+
+Get - fetching an object by its objectId.
+Find - issuing a query to fetch objects.
+Update - saving an object that already exists and has been modified.
+Create - saving an object that is new and hasn't been created yet.
+Delete - deleting an object.
+Add fields - adding fields to the class.
+You can also disable creation of new classes altogether by going to the "Settings" panel, and turning off "Allow client class creation" on the "General Settings" tab.
